@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/greensucculent/metal"
+	"github.com/green-aloe/metal"
 )
 
 func ExampleNewBuffer1D() {

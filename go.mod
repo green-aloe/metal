@@ -1,4 +1,4 @@
-module github.com/greensucculent/metal
+module github.com/green-aloe/metal
 
 go 1.20
 
