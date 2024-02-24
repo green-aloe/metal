@@ -2,7 +2,7 @@
 
 using namespace metal;
 
-kernel void transfer1D(constant float *input, device float *result, uint pos [[thread_position_in_grid]]) {
+kernel void transfer1D(constant float *i, constant float *input, device float *result, uint pos [[thread_position_in_grid]]) {
     int index = pos;
-    result[pos] = input[pos];
+    result[index] = input[index];
 }
