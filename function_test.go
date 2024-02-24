@@ -57,13 +57,13 @@ func addId() {
 // Test_FunctionId_NewFunction tests that NewFunction either creates a new metal function or returns
 // the expected message, depending on the conditions of each scenario.
 func Test_FunctionId_NewFunction(t *testing.T) {
-	type scenario struct {
+	type subtest struct {
 		source   string
 		function string
 		wantErr  string
 	}
 
-	scenarios := []scenario{
+	subtests := []subtest{
 		{
 			// No source or function name
 			wantErr: "Unable to set up metal function: Missing metal code",
@@ -103,19 +103,19 @@ func Test_FunctionId_NewFunction(t *testing.T) {
 		},
 	}
 
-	for i, scenario := range scenarios {
-		t.Run(fmt.Sprintf("Scenario%02d", i+1), func(t *testing.T) {
+	for i, subtest := range subtests {
+		t.Run(fmt.Sprintf("Subtest%02d", i+1), func(t *testing.T) {
 			// Try to create a new metal function with the provided source and function name.
-			functionId, err := NewFunction(scenario.source, scenario.function)
+			functionId, err := NewFunction(subtest.source, subtest.function)
 
-			// Test that the scenario's expected error and the actual error line up.
-			if scenario.wantErr == "" {
+			// Test that the subtest's expected error and the actual error line up.
+			if subtest.wantErr == "" {
 				require.Nil(t, err, "Unable to create metal function: %s", err)
 				require.True(t, functionId.Valid())
 				require.True(t, validId(functionId))
 			} else {
 				require.NotNil(t, err)
-				require.Equal(t, scenario.wantErr, err.Error())
+				require.Equal(t, subtest.wantErr, err.Error())
 				require.False(t, functionId.Valid())
 			}
 		})
