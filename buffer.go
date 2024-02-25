@@ -126,5 +126,8 @@ func newBuffer[T BufferType](dimLens ...int) (BufferId, []T, error) {
 		return 0, nil, metalErrToError(err, "Unable to retrieve buffer")
 	}
 
-	return BufferId(bufferId), toSlice[T](newBuffer, numElems), nil
+	// Wrap the buffer in a go slice.
+	slice := unsafe.Slice((*T)(newBuffer), numElems)
+
+	return BufferId(bufferId), slice, nil
 }
