@@ -118,7 +118,7 @@ func Example() {
 		X: width,
 		Y: height,
 	}
-	if err := functionId.Run(grid, inputId, outputId); err != nil {
+	if err := functionId.Run(grid, nil, []metal.BufferId{inputId, outputId}); err != nil {
 		log.Fatalf("Unable to run metal function: %v", err)
 	}
 
