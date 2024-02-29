@@ -322,6 +322,68 @@ func Test_fold(t *testing.T) {
 	require.Equal(t, want6, have6)
 }
 
+// Test_convertList tests that convertList correctly converts lists from one type to another and
+// returns a pointer to the first element (if any).
+func Test_convertList(t *testing.T) {
+	t.Run("nil list", func(t *testing.T) {
+		outputs, outputsPtr := convertList[int32, int32](nil)
+		require.Nil(t, outputs)
+		require.Nil(t, outputsPtr)
+	})
+
+	t.Run("empty list", func(t *testing.T) {
+		outputs, outputsPtr := convertList[int32, int32]([]int32{})
+		require.Nil(t, outputs)
+		require.Nil(t, outputsPtr)
+	})
+
+	t.Run("list with one element", func(t *testing.T) {
+		inputs := []int32{1}
+		outputs, outputsPtr := convertList[int32, int32](inputs)
+		require.Equal(t, inputs, outputs)
+		require.Equal(t, &inputs[0], outputsPtr)
+	})
+
+	t.Run("list with multiple elements", func(t *testing.T) {
+		inputs := []int32{1, 2, 3}
+		outputs, outputsPtr := convertList[int32, int32](inputs)
+		require.Equal(t, inputs, outputs)
+		require.Equal(t, &inputs[0], outputsPtr)
+	})
+
+	t.Run("conversion from int32 to float32", func(t *testing.T) {
+		inputs := []int32{1, 2, 3}
+		want := []float32{1.0, 2.0, 3.0}
+		outputs, outputsPtr := convertList[int32, float32](inputs)
+		require.Equal(t, want, outputs)
+		require.Equal(t, &want[0], outputsPtr)
+	})
+
+	t.Run("conversion from int32 to float64", func(t *testing.T) {
+		inputs := []int32{1, 2, 3}
+		want := []float64{1.0, 2.0, 3.0}
+		outputs, outputsPtr := convertList[int32, float64](inputs)
+		require.Equal(t, want, outputs)
+		require.Equal(t, &want[0], outputsPtr)
+	})
+
+	t.Run("conversion from float32 to int32", func(t *testing.T) {
+		inputs := []float32{1.0, 2.0, 3.0}
+		want := []int32{1, 2, 3}
+		outputs, outputsPtr := convertList[float32, int32](inputs)
+		require.Equal(t, want, outputs)
+		require.Equal(t, &want[0], outputsPtr)
+	})
+
+	t.Run("conversion from float64 to int32", func(t *testing.T) {
+		inputs := []float64{1.0, 2.0, 3.0}
+		want := []int32{1, 2, 3}
+		outputs, outputsPtr := convertList[float64, int32](inputs)
+		require.Equal(t, want, outputs)
+		require.Equal(t, &want[0], outputsPtr)
+	})
+}
+
 // Test_metalErrToError tests that metalErrToError returns a go error that wraps a metal error.
 func Test_metalErrToError(t *testing.T) {
 	type subtest struct {

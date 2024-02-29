@@ -39,6 +39,26 @@ func fold[T any](items []T, width int) [][]T {
 	return plane
 }
 
+// convertList converts a list from one type to another by typecasting the elements. It returns the
+// converted list and a pointer to the first element. If the list is empty, this returns nil, nil.
+func convertList[I, O BufferType](inputs []I) ([]O, *O) {
+	if len(inputs) == 0 {
+		return nil, nil
+	}
+
+	// Convert the inputs from one type to another.
+	var outputs []O
+	for i := range inputs {
+		outputs = append(outputs, O(inputs[i]))
+
+	}
+
+	// Get a pointer to the first element of the outputs.
+	outputsPtr := &outputs[0]
+
+	return outputs, outputsPtr
+}
+
 // metalErrToError wraps the metal error metalErr inside wrap.
 func metalErrToError(metalErr *C.char, wrap string) error {
 	switch {
