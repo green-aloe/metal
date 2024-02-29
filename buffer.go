@@ -18,8 +18,8 @@ import (
 	"unsafe"
 )
 
-// A BufferId references a specific metal buffer created with NewBuffer.
-type BufferId int
+// A BufferId references a specific metal buffer created with NewBuffer*.
+type BufferId int32
 
 // Valid checks whether or not the buffer Id is valid and can be used to run a computational process
 // on the GPU.
