@@ -13,28 +13,28 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Test_fold tests that fold correctly portions up slices of varying widths.
-func Test_fold(t *testing.T) {
+// Test_Fold tests that Fold correctly portions up slices of varying widths.
+func Test_Fold(t *testing.T) {
 
 	t.Run("nil or empty list", func(t *testing.T) {
-		require.Nil(t, fold[int](nil, 10))
-		require.Nil(t, fold([]int{}, 10))
+		require.Nil(t, Fold[int](nil, 10))
+		require.Nil(t, Fold([]int{}, 10))
 	})
 
 	t.Run("non-positive width", func(t *testing.T) {
 		input := []int{1, 2, 3, 4, 5, 6, 7, 8}
-		require.Nil(t, fold(input, -1))
-		require.Nil(t, fold(input, 0))
+		require.Nil(t, Fold(input, -1))
+		require.Nil(t, Fold(input, 0))
 	})
 
 	t.Run("width does not evenly divide list", func(t *testing.T) {
 		input := []int{1, 2, 3, 4, 5, 6, 7, 8}
-		require.Nil(t, fold(input, 3))
+		require.Nil(t, Fold(input, 3))
 	})
 
 	t.Run("4 integers into 2 groups of 2", func(t *testing.T) {
 		input := []int{1, 2, 3, 4}
-		output := fold(input, 2)
+		output := Fold(input, 2)
 		want := [][]int{{1, 2}, {3, 4}}
 		require.Equal(t, want, output)
 		for i := range output {
@@ -54,7 +54,7 @@ func Test_fold(t *testing.T) {
 
 	t.Run("8 floats into 2 groups of 4", func(t *testing.T) {
 		input := []float32{1, 2, 3, 4, 5, 6, 7, 8}
-		output := fold(input, 2)
+		output := Fold(input, 2)
 		want := [][]float32{{1, 2, 3, 4}, {5, 6, 7, 8}}
 		require.Equal(t, want, output)
 		for i := range output {
@@ -74,7 +74,7 @@ func Test_fold(t *testing.T) {
 
 	t.Run("7 integers into 1 group of 7", func(t *testing.T) {
 		input := []int8{1, 2, 3, 4, 5, 6, 7}
-		output := fold(input, 1)
+		output := Fold(input, 1)
 		want := [][]int8{{1, 2, 3, 4, 5, 6, 7}}
 		require.Equal(t, want, output)
 		for i := range output {
@@ -94,7 +94,7 @@ func Test_fold(t *testing.T) {
 
 	t.Run("7 integers into 7 groups of 1", func(t *testing.T) {
 		input := []int8{1, 2, 3, 4, 5, 6, 7}
-		output := fold(input, 7)
+		output := Fold(input, 7)
 		want := [][]int8{{1}, {2}, {3}, {4}, {5}, {6}, {7}}
 		require.Equal(t, want, output)
 		for i := range output {
@@ -114,7 +114,7 @@ func Test_fold(t *testing.T) {
 
 	t.Run("24 integers into 8 groups of 3", func(t *testing.T) {
 		input1 := []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24}
-		output1 := fold(input1, 8)
+		output1 := Fold(input1, 8)
 		want1 := [][]uint64{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}, {10, 11, 12}, {13, 14, 15}, {16, 17, 18}, {19, 20, 21}, {22, 23, 24}}
 		require.Equal(t, want1, output1)
 		for i := range output1 {
@@ -122,7 +122,7 @@ func Test_fold(t *testing.T) {
 		}
 
 		// Test folding those 8 slices from above into 2 groups of 4.
-		output2 := fold(output1, 2)
+		output2 := Fold(output1, 2)
 		want2 := [][][]uint64{{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}, {10, 11, 12}}, {{13, 14, 15}, {16, 17, 18}, {19, 20, 21}, {22, 23, 24}}}
 		require.Equal(t, want2, output2)
 		for i := range output2 {
