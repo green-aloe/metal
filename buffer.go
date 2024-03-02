@@ -61,7 +61,7 @@ func NewBuffer2D[T BufferType](width, height int) (BufferId, [][]T, error) {
 		return 0, nil, err
 	}
 
-	b2 := fold(b1, width)
+	b2 := Fold(b1, width)
 
 	return bufferId, b2, nil
 }
@@ -83,8 +83,8 @@ func NewBuffer3D[T BufferType](width, height, depth int) (BufferId, [][][]T, err
 		return 0, nil, err
 	}
 
-	b2 := fold(b1, width*height)
-	b3 := fold(b2, width)
+	b2 := Fold(b1, width*height)
+	b3 := Fold(b2, width)
 
 	return bufferId, b3, nil
 }
