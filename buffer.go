@@ -32,85 +32,29 @@ type BufferType interface {
 	~int8 | ~int16 | ~int32 | ~int64 | ~uint8 | ~uint16 | ~uint32 | ~uint64 | ~float32 | ~float64
 }
 
-// NewBuffer1D allocates a 1-dimensional block of memory that is accessible to both the CPU and GPU.
+// NewBuffer allocates a 1-dimensional block of memory that is accessible to both the CPU and GPU.
 // It returns a unique Id for the buffer and a slice that wraps the new memory and has a length and
-// capacity equal to width. This should be called only once for every argument supplied to a metal
-// function, no matter how many times the buffer is used or for which metal functions.
+// capacity equal to width. The buffer is safe for reuse with any metal function.
 //
 // The Id is used to reference the buffer as an argument for the metal function.
 //
 // Only the contents of the slice should be modified. Its length and capacity and the pointer to its
 // underlying array should not be altered.
-func NewBuffer1D[T BufferType](width int) (BufferId, []T, error) {
-	return newBuffer[T](width)
-}
-
-// NewBuffer2D allocates a 2-dimensional block of memory that is accessible to both the CPU and GPU.
-// It returns a unique Id for the buffer and a slice that wraps the new memory and has a length and
-// capacity equal to width. Each element in the slice is another slice with a length equal to
-// height. This should be called only once for every argument supplied to a metal function, no
-// matter how many times the buffer is used or for which metal functions.
 //
-// The Id is used to reference the buffer as an argument for the metal function.
-//
-// Only the contents of the slices should be modified. Their lengths and capacities and the pointers
-// to their underlying arrays should not be altered.
-func NewBuffer2D[T BufferType](width, height int) (BufferId, [][]T, error) {
-	bufferId, b1, err := newBuffer[T](width, height)
-	if err != nil {
-		return 0, nil, err
+// Use Fold to safely portion the slice into more dimensions. For example, to convert a
+// one-dimensional slice into a two-dimensional slice, use Fold(buffer, width). Or to go from one
+// dimensions to three, use Fold(Fold(buffer, width*height), width).
+func NewBuffer[T BufferType](width int) (BufferId, []T, error) {
+	if width < 1 {
+		return 0, nil, errors.New("Invalid width")
 	}
 
-	b2 := Fold(b1, width)
-
-	return bufferId, b2, nil
-}
-
-// NewBuffer3D allocates a 3-dimensional block of memory that is accessible to both the CPU and GPU.
-// It returns a unique Id for the buffer and a slice that wraps the new memory and has a length and
-// capacity equal to width. Each element in the slice is another slice with a length equal to
-// height, and each of their elements is in turn another slice with a length equal to depth. This
-// should be called only once for every argument supplied to a metal function, no matter how many
-// times the buffer is used or for which metal functions.
-//
-// The Id is used to reference the buffer as an argument for the metal function.
-//
-// Only the contents of the slices should be modified. Their lengths and capacities and the pointers
-// to their underlying arrays should not be altered.
-func NewBuffer3D[T BufferType](width, height, depth int) (BufferId, [][][]T, error) {
-	bufferId, b1, err := newBuffer[T](width, height, depth)
-	if err != nil {
-		return 0, nil, err
+	numBytes := width * sizeof[T]()
+	if numBytes > math.MaxInt32 || numBytes < 0 {
+		return 0, nil, errors.New("Exceeded maximum number of bytes")
 	}
 
-	b2 := Fold(b1, width*height)
-	b3 := Fold(b2, width)
-
-	return bufferId, b3, nil
-}
-
-// newBuffer is the common internal function for creating a new buffer with N dimensions.
-func newBuffer[T BufferType](dimLens ...int) (BufferId, []T, error) {
-	if len(dimLens) == 0 {
-		return 0, nil, errors.New("Missing dimension(s)")
-	}
-
-	// Calculate how many elements we'll need based on the dimensions provided, and also check that
-	// each dimension is valid and won't overflow the maximum bytes.
-	numElems := 1
-	numBytes := sizeof[T]()
-	for _, dimLen := range dimLens {
-		if dimLen < 1 {
-			return 0, nil, errors.New("Invalid dimension")
-		}
-
-		numElems *= dimLen
-		numBytes *= dimLen
-		if numBytes > math.MaxInt32 || numBytes < 0 {
-			return 0, nil, errors.New("Exceeded maximum number of bytes")
-		}
-	}
-
+	// Set up some space to hold a possible error message.
 	err := C.CString("")
 	defer C.free(unsafe.Pointer(err))
 
@@ -127,7 +71,7 @@ func newBuffer[T BufferType](dimLens ...int) (BufferId, []T, error) {
 	}
 
 	// Wrap the buffer in a go slice.
-	slice := unsafe.Slice((*T)(newBuffer), numElems)
+	slice := unsafe.Slice((*T)(newBuffer), width)
 
 	return BufferId(bufferId), slice, nil
 }
