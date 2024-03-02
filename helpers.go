@@ -15,12 +15,6 @@ import (
 	"unsafe"
 )
 
-// sizeof returns the size in bytes of the generic type T.
-func sizeof[T any]() int {
-	var t T
-	return int(unsafe.Sizeof(t))
-}
-
 // fold folds a 1-dimensional slice of N items into a 2-dimensional slice of width x (N/width)
 // items. width must equally divide items. All sub-slices in the returned slice have a capacity
 // equal to N/width.
@@ -37,6 +31,12 @@ func fold[T any](items []T, width int) [][]T {
 	}
 
 	return plane
+}
+
+// sizeof returns the size in bytes of the generic type T.
+func sizeof[T any]() int {
+	var t T
+	return int(unsafe.Sizeof(t))
 }
 
 // convertList converts a list from one type to another by typecasting the elements. It returns the

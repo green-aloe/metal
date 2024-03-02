@@ -13,6 +13,136 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Test_fold tests that fold correctly portions up slices of varying widths.
+func Test_fold(t *testing.T) {
+
+	t.Run("nil or empty list", func(t *testing.T) {
+		require.Nil(t, fold[int](nil, 10))
+		require.Nil(t, fold([]int{}, 10))
+	})
+
+	t.Run("non-positive width", func(t *testing.T) {
+		input := []int{1, 2, 3, 4, 5, 6, 7, 8}
+		require.Nil(t, fold(input, -1))
+		require.Nil(t, fold(input, 0))
+	})
+
+	t.Run("width does not evenly divide list", func(t *testing.T) {
+		input := []int{1, 2, 3, 4, 5, 6, 7, 8}
+		require.Nil(t, fold(input, 3))
+	})
+
+	t.Run("4 integers into 2 groups of 2", func(t *testing.T) {
+		input := []int{1, 2, 3, 4}
+		output := fold(input, 2)
+		want := [][]int{{1, 2}, {3, 4}}
+		require.Equal(t, want, output)
+		for i := range output {
+			require.Equal(t, 2, cap(output[i]))
+		}
+
+		// Test that the folded slice still references the original backing array.
+		for i := range input {
+			input[i] = i + 11
+		}
+		want = [][]int{{11, 12}, {13, 14}}
+		require.Equal(t, want, output)
+		for i := range output {
+			require.Equal(t, 2, cap(output[i]))
+		}
+	})
+
+	t.Run("8 floats into 2 groups of 4", func(t *testing.T) {
+		input := []float32{1, 2, 3, 4, 5, 6, 7, 8}
+		output := fold(input, 2)
+		want := [][]float32{{1, 2, 3, 4}, {5, 6, 7, 8}}
+		require.Equal(t, want, output)
+		for i := range output {
+			require.Equal(t, 4, cap(output[i]))
+		}
+
+		// Test that the folded slice still references the original backing array.
+		for i := range input {
+			input[i] = float32(i + 11)
+		}
+		want = [][]float32{{11, 12, 13, 14}, {15, 16, 17, 18}}
+		require.Equal(t, want, output)
+		for i := range output {
+			require.Equal(t, 4, cap(output[i]))
+		}
+	})
+
+	t.Run("7 integers into 1 group of 7", func(t *testing.T) {
+		input := []int8{1, 2, 3, 4, 5, 6, 7}
+		output := fold(input, 1)
+		want := [][]int8{{1, 2, 3, 4, 5, 6, 7}}
+		require.Equal(t, want, output)
+		for i := range output {
+			require.Equal(t, 7, cap(output[i]))
+		}
+
+		// Test that the folded slice still references the original backing array.
+		for i := range input {
+			input[i] = int8(i + 11)
+		}
+		want = [][]int8{{11, 12, 13, 14, 15, 16, 17}}
+		require.Equal(t, want, output)
+		for i := range output {
+			require.Equal(t, 7, cap(output[i]))
+		}
+	})
+
+	t.Run("7 integers into 7 groups of 1", func(t *testing.T) {
+		input := []int8{1, 2, 3, 4, 5, 6, 7}
+		output := fold(input, 7)
+		want := [][]int8{{1}, {2}, {3}, {4}, {5}, {6}, {7}}
+		require.Equal(t, want, output)
+		for i := range output {
+			require.Equal(t, 1, cap(output[i]))
+		}
+
+		// Test that the folded slice still references the original backing array.
+		for i := range input {
+			input[i] = int8(i + 11)
+		}
+		want = [][]int8{{11}, {12}, {13}, {14}, {15}, {16}, {17}}
+		require.Equal(t, want, output)
+		for i := range output {
+			require.Equal(t, 1, cap(output[i]))
+		}
+	})
+
+	t.Run("24 integers into 8 groups of 3", func(t *testing.T) {
+		input1 := []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24}
+		output1 := fold(input1, 8)
+		want1 := [][]uint64{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}, {10, 11, 12}, {13, 14, 15}, {16, 17, 18}, {19, 20, 21}, {22, 23, 24}}
+		require.Equal(t, want1, output1)
+		for i := range output1 {
+			require.Equal(t, 3, cap(output1[i]))
+		}
+
+		// Test folding those 8 slices from above into 2 groups of 4.
+		output2 := fold(output1, 2)
+		want2 := [][][]uint64{{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}, {10, 11, 12}}, {{13, 14, 15}, {16, 17, 18}, {19, 20, 21}, {22, 23, 24}}}
+		require.Equal(t, want2, output2)
+		for i := range output2 {
+			require.Equal(t, 4, cap(output2[i]))
+			for j := range output2[i] {
+				require.Equal(t, 3, cap(output2[i][j]))
+			}
+		}
+
+		// Test that the folded slices still reference the original backing array.
+		for i := range input1 {
+			input1[i] = uint64(i + 11)
+		}
+		want1 = [][]uint64{{11, 12, 13}, {14, 15, 16}, {17, 18, 19}, {20, 21, 22}, {23, 24, 25}, {26, 27, 28}, {29, 30, 31}, {32, 33, 34}}
+		require.Equal(t, want1, output1)
+		want2 = [][][]uint64{{{11, 12, 13}, {14, 15, 16}, {17, 18, 19}, {20, 21, 22}}, {{23, 24, 25}, {26, 27, 28}, {29, 30, 31}, {32, 33, 34}}}
+		require.Equal(t, want2, output2)
+	})
+}
+
 // Test_sizeof tests that sizeof returns the correct size for various types.
 func Test_sizeof(t *testing.T) {
 	t.Run("boolean", func(t *testing.T) {
@@ -229,136 +359,6 @@ func Test_sizeof(t *testing.T) {
 		fn = func() { fmt.Println("Hello, world") }
 		require.Equal(t, int(unsafe.Sizeof(fn)), sizeof[func()]())
 		require.Equal(t, int(reflect.TypeOf(fn).Size()), sizeof[func()]())
-	})
-}
-
-// Test_fold tests that fold correctly portions up slices of varying widths.
-func Test_fold(t *testing.T) {
-
-	t.Run("nil or empty list", func(t *testing.T) {
-		require.Nil(t, fold[int](nil, 10))
-		require.Nil(t, fold([]int{}, 10))
-	})
-
-	t.Run("non-positive width", func(t *testing.T) {
-		input := []int{1, 2, 3, 4, 5, 6, 7, 8}
-		require.Nil(t, fold(input, -1))
-		require.Nil(t, fold(input, 0))
-	})
-
-	t.Run("width does not evenly divide list", func(t *testing.T) {
-		input := []int{1, 2, 3, 4, 5, 6, 7, 8}
-		require.Nil(t, fold(input, 3))
-	})
-
-	t.Run("4 integers into 2 groups of 2", func(t *testing.T) {
-		input := []int{1, 2, 3, 4}
-		output := fold(input, 2)
-		want := [][]int{{1, 2}, {3, 4}}
-		require.Equal(t, want, output)
-		for i := range output {
-			require.Equal(t, 2, cap(output[i]))
-		}
-
-		// Test that the folded slice still references the original backing array.
-		for i := range input {
-			input[i] = i + 11
-		}
-		want = [][]int{{11, 12}, {13, 14}}
-		require.Equal(t, want, output)
-		for i := range output {
-			require.Equal(t, 2, cap(output[i]))
-		}
-	})
-
-	t.Run("8 floats into 2 groups of 4", func(t *testing.T) {
-		input := []float32{1, 2, 3, 4, 5, 6, 7, 8}
-		output := fold(input, 2)
-		want := [][]float32{{1, 2, 3, 4}, {5, 6, 7, 8}}
-		require.Equal(t, want, output)
-		for i := range output {
-			require.Equal(t, 4, cap(output[i]))
-		}
-
-		// Test that the folded slice still references the original backing array.
-		for i := range input {
-			input[i] = float32(i + 11)
-		}
-		want = [][]float32{{11, 12, 13, 14}, {15, 16, 17, 18}}
-		require.Equal(t, want, output)
-		for i := range output {
-			require.Equal(t, 4, cap(output[i]))
-		}
-	})
-
-	t.Run("7 integers into 1 group of 7", func(t *testing.T) {
-		input := []int8{1, 2, 3, 4, 5, 6, 7}
-		output := fold(input, 1)
-		want := [][]int8{{1, 2, 3, 4, 5, 6, 7}}
-		require.Equal(t, want, output)
-		for i := range output {
-			require.Equal(t, 7, cap(output[i]))
-		}
-
-		// Test that the folded slice still references the original backing array.
-		for i := range input {
-			input[i] = int8(i + 11)
-		}
-		want = [][]int8{{11, 12, 13, 14, 15, 16, 17}}
-		require.Equal(t, want, output)
-		for i := range output {
-			require.Equal(t, 7, cap(output[i]))
-		}
-	})
-
-	t.Run("7 integers into 7 groups of 1", func(t *testing.T) {
-		input := []int8{1, 2, 3, 4, 5, 6, 7}
-		output := fold(input, 7)
-		want := [][]int8{{1}, {2}, {3}, {4}, {5}, {6}, {7}}
-		require.Equal(t, want, output)
-		for i := range output {
-			require.Equal(t, 1, cap(output[i]))
-		}
-
-		// Test that the folded slice still references the original backing array.
-		for i := range input {
-			input[i] = int8(i + 11)
-		}
-		want = [][]int8{{11}, {12}, {13}, {14}, {15}, {16}, {17}}
-		require.Equal(t, want, output)
-		for i := range output {
-			require.Equal(t, 1, cap(output[i]))
-		}
-	})
-
-	t.Run("24 integers into 8 groups of 3", func(t *testing.T) {
-		input1 := []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24}
-		output1 := fold(input1, 8)
-		want1 := [][]uint64{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}, {10, 11, 12}, {13, 14, 15}, {16, 17, 18}, {19, 20, 21}, {22, 23, 24}}
-		require.Equal(t, want1, output1)
-		for i := range output1 {
-			require.Equal(t, 3, cap(output1[i]))
-		}
-
-		// Test folding those 8 slices from above into 2 groups of 4.
-		output2 := fold(output1, 2)
-		want2 := [][][]uint64{{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}, {10, 11, 12}}, {{13, 14, 15}, {16, 17, 18}, {19, 20, 21}, {22, 23, 24}}}
-		require.Equal(t, want2, output2)
-		for i := range output2 {
-			require.Equal(t, 4, cap(output2[i]))
-			for j := range output2[i] {
-				require.Equal(t, 3, cap(output2[i][j]))
-			}
-		}
-
-		// Test that the folded slices still reference the original backing array.
-		for i := range input1 {
-			input1[i] = uint64(i + 11)
-		}
-		want1 = [][]uint64{{11, 12, 13}, {14, 15, 16}, {17, 18, 19}, {20, 21, 22}, {23, 24, 25}, {26, 27, 28}, {29, 30, 31}, {32, 33, 34}}
-		require.Equal(t, want1, output1)
-		want2 = [][][]uint64{{{11, 12, 13}, {14, 15, 16}, {17, 18, 19}, {20, 21, 22}}, {{23, 24, 25}, {26, 27, 28}, {29, 30, 31}, {32, 33, 34}}}
-		require.Equal(t, want2, output2)
 	})
 }
 
