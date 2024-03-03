@@ -225,10 +225,10 @@ func Test_Function_NewFunction_threadSafe(t *testing.T) {
 	for function := range idMap {
 		idList = append(idList, function)
 	}
-	sort.Slice(idList, func(i, j int) bool { return idList[i] < idList[j] })
+	sort.Slice(idList, func(i, j int) bool { return idList[i].id < idList[j].id })
 	require.Len(t, idList, numIter)
 	for i := 0; i < numIter; i++ {
-		require.Equal(t, nextMetalId-numIter+i, int(idList[i]))
+		require.Equal(t, nextMetalId-numIter+i, int(idList[i].id))
 	}
 }
 
@@ -241,17 +241,17 @@ func Test_Function_Run_invalid(t *testing.T) {
 
 	// Test calling Run with an invalid (uninitialized) Function.
 	var emptyFunction Function
-	err = emptyFunction.Run(Grid{}, nil, nil)
+	err = emptyFunction.Run(Grid{})
 	require.NotNil(t, err)
 	require.Equal(t, "Unable to run metal function: Failed to retrieve function", err.Error())
 
 	// Test calling Run with a buffer Id for a buffer that doesn't exist.
-	err = function.Run(Grid{}, nil, []BufferId{10000})
+	err = function.Run(Grid{}, 10000)
 	require.NotNil(t, err)
 	require.Equal(t, "Unable to run metal function: Failed to retrieve buffer 1/1 using Id 10000", err.Error())
 
 	// Test calling Run with an invalid Grid.
-	err = function.Run(Grid{X: -1, Y: -1, Z: -1}, nil, nil)
+	err = function.Run(Grid{X: -1, Y: -1, Z: -1})
 	require.Nil(t, err)
 }
 
@@ -270,7 +270,7 @@ func Test_Function_Run_1D(t *testing.T) {
 			inputId, input, err := NewBuffer[float32](width)
 			require.Nil(t, err)
 			require.True(t, validId(inputId))
-			outputId, output, err := NewBuffer1D[float32](width)
+			outputId, output, err := NewBuffer[float32](width)
 			require.Nil(t, err)
 			require.True(t, validId(outputId))
 
@@ -281,7 +281,7 @@ func Test_Function_Run_1D(t *testing.T) {
 
 			// Run the function and test that all values were transferred from the input to the output.
 			require.NotEqual(t, input, output)
-			err = function.Run(Grid{X: width}, nil, []BufferId{inputId, outputId})
+			err = function.Run(Grid{X: width}, inputId, outputId)
 			require.Nil(t, err)
 			require.Equal(t, input, output)
 
@@ -290,7 +290,7 @@ func Test_Function_Run_1D(t *testing.T) {
 				input[i] = float32(i * i)
 			}
 			require.NotEqual(t, input, output)
-			err = function.Run(Grid{X: width}, nil, []BufferId{inputId, outputId})
+			err = function.Run(Grid{X: width}, inputId, outputId)
 			require.Nil(t, err)
 			require.Equal(t, input, output)
 		})
@@ -311,12 +311,15 @@ func Test_Function_Run_2D(t *testing.T) {
 			require.True(t, validId(function.id))
 
 			// Set up input and output buffers.
-			inputId, input, err := NewBuffer2D[float32](width, height)
+			inputId, i, err := NewBuffer[float32](width * height)
 			require.Nil(t, err)
 			require.True(t, validId(inputId))
-			outputId, output, err := NewBuffer2D[float32](width, height)
+			outputId, o, err := NewBuffer[float32](width * height)
 			require.Nil(t, err)
 			require.True(t, validId(outputId))
+
+			input := Fold(i, width)
+			output := Fold(o, width)
 
 			// Set some initial values for the input.
 			for i := range input {
@@ -327,7 +330,7 @@ func Test_Function_Run_2D(t *testing.T) {
 
 			// Run the function and test that all values were transferred from the input to the output.
 			require.NotEqual(t, input, output)
-			err = function.Run(Grid{X: width, Y: height}, nil, []BufferId{inputId, outputId})
+			err = function.Run(Grid{X: width, Y: height}, inputId, outputId)
 			require.Nil(t, err)
 			require.Equal(t, input, output)
 
@@ -338,7 +341,7 @@ func Test_Function_Run_2D(t *testing.T) {
 				}
 			}
 			require.NotEqual(t, input, output)
-			err = function.Run(Grid{X: width, Y: height}, nil, []BufferId{inputId, outputId})
+			err = function.Run(Grid{X: width, Y: height}, inputId, outputId)
 			require.Nil(t, err)
 			require.Equal(t, input, output)
 		})
@@ -360,12 +363,15 @@ func Test_Function_Run_3D(t *testing.T) {
 			require.True(t, validId(function.id))
 
 			// Set up input and output buffers.
-			inputId, input, err := NewBuffer3D[float32](width, height, depth)
+			inputId, i, err := NewBuffer[float32](width * height * depth)
 			require.Nil(t, err)
 			require.True(t, validId(inputId))
-			outputId, output, err := NewBuffer3D[float32](width, height, depth)
+			outputId, o, err := NewBuffer[float32](width * height * depth)
 			require.Nil(t, err)
 			require.True(t, validId(outputId))
+
+			input := Fold(Fold(i, width*height), width)
+			output := Fold(Fold(o, width*height), width)
 
 			// Set some initial values for the input.
 			for i := range input {
@@ -378,7 +384,7 @@ func Test_Function_Run_3D(t *testing.T) {
 
 			// Run the function and test that all values were transferred from the input to the output.
 			require.NotEqual(t, input, output)
-			err = function.Run(Grid{X: width, Y: height, Z: depth}, nil, []BufferId{inputId, outputId})
+			err = function.Run(Grid{X: width, Y: height, Z: depth}, inputId, outputId)
 			require.Nil(t, err)
 			require.Equal(t, input, output)
 
@@ -391,7 +397,7 @@ func Test_Function_Run_3D(t *testing.T) {
 				}
 			}
 			require.NotEqual(t, input, output)
-			err = function.Run(Grid{X: width, Y: height, Z: depth}, nil, []BufferId{inputId, outputId})
+			err = function.Run(Grid{X: width, Y: height, Z: depth}, inputId, outputId)
 			require.Nil(t, err)
 			require.Equal(t, input, output)
 		})
@@ -427,10 +433,10 @@ func Test_Function_Run_threadSafe(t *testing.T) {
 	// Prepare one goroutine to run the metal function with unique buffers for each iteration.
 	for iteration := 1; iteration <= numIter; iteration++ {
 		// Create the buffers for this iteration.
-		inputId, input, err := NewBuffer1D[float32](width)
+		inputId, input, err := NewBuffer[float32](width)
 		require.Nil(t, err)
 		require.True(t, validId(inputId))
-		outputId, output, err := NewBuffer1D[float32](width)
+		outputId, output, err := NewBuffer[float32](width)
 		require.Nil(t, err)
 		require.True(t, validId(outputId))
 
@@ -444,7 +450,7 @@ func Test_Function_Run_threadSafe(t *testing.T) {
 		go func(iteration int) {
 			wg.Wait()
 
-			err := function.Run(grid, nil, []BufferId{inputId, outputId})
+			err := function.Run(grid, inputId, outputId)
 
 			dataCh <- data{
 				iteration: iteration,
@@ -515,10 +521,10 @@ func testType[T BufferType](t *testing.T, metalType string, wantFail bool, sette
 		require.True(t, validId(function.id))
 
 		// Create the input and output buffers.
-		inputId, input, err := NewBuffer1D[T](100)
+		inputId, input, err := NewBuffer[T](100)
 		require.Nil(t, err)
 		require.True(t, validId(inputId))
-		outputId, output, err := NewBuffer1D[T](100)
+		outputId, output, err := NewBuffer[T](100)
 		require.Nil(t, err)
 		require.True(t, validId(outputId))
 
@@ -528,7 +534,7 @@ func testType[T BufferType](t *testing.T, metalType string, wantFail bool, sette
 		}
 
 		// Run the metal function.
-		function.Run(Grid{X: 100}, nil, []BufferId{inputId, outputId})
+		function.Run(Grid{X: 100}, inputId, outputId)
 		require.Nil(t, err)
 
 		// Test that the inputs were either correctly or incorrectly transferred over to the
@@ -551,9 +557,9 @@ func Benchmark_Run(b *testing.B) {
 		addId()
 
 		// Set up input and output buffers.
-		inputId, input, _ := NewBuffer1D[float32](width)
+		inputId, input, _ := NewBuffer[float32](width)
 		addId()
-		outputId, output, _ := NewBuffer1D[float32](width)
+		outputId, output, _ := NewBuffer[float32](width)
 		addId()
 
 		for i := range input {
@@ -570,7 +576,7 @@ func Benchmark_Run(b *testing.B) {
 
 		b.Run(fmt.Sprintf("Parallel_%d", width), func(b *testing.B) {
 			for n := 0; n < b.N; n++ {
-				function.Run(Grid{X: 1}, nil, []BufferId{inputId, outputId})
+				function.Run(Grid{X: 1}, inputId, outputId)
 			}
 		})
 	}

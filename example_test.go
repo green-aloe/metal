@@ -10,7 +10,8 @@ import (
 func ExampleNewBuffer1D() {
 	// Create a 1-dimensional buffer with a width of 100 items. This will allocate 400 bytes (100
 	// items * sizeof(float32)).
-	bufferId, buffer, err := metal.NewBuffer1D[float32](100)
+	width := 100
+	bufferId, buffer, err := metal.NewBuffer[float32](width)
 	if err != nil {
 		log.Fatalf("Unable to create metal buffer: %v", err)
 	}
@@ -23,33 +24,46 @@ func ExampleNewBuffer1D() {
 }
 
 func ExampleNewBuffer2D() {
-	// Create a 2-dimensional buffer with a width of 100 items and a height of 20 items. This will
-	// allocate 8,000 bytes (100 * 20 * sizeof(float32)).
-	bufferId, buffer, err := metal.NewBuffer2D[float32](100, 20)
+	// Create a 1-dimensional buffer with enough items to eventually have a 2-dimensional buffer
+	// with a width of 100 items and a height of 20 items. This will allocate 8,000 bytes (100 * 20
+	// * sizeof(float32)).
+	width, height := 100, 20
+	bufferId, buffer1D, err := metal.NewBuffer[float32](width * height)
 	if err != nil {
 		log.Fatalf("Unable to create metal buffer: %v", err)
 	}
 
+	// Fold the buffer into a 2D grid of 100 items wide and 20 items tall.
+	buffer2D := metal.Fold(buffer1D, width)
+
 	// bufferId is used to reference the buffer when running a metal function later.
 	_ = bufferId
 
-	// buffer is used to load/retrieve data from the pipeline.
-	_ = buffer
+	// buffer2D is used to load/retrieve data from the pipeline.
+	_ = buffer2D
 }
 
 func ExampleNewBuffer3D() {
-	// Create a 3-dimensional buffer with a width of 100 items, a height of 20 items, and a depth of
-	// 2 items. This will allocate 16,000 bytes (100 * 20 * 2 * sizeof(float32)).
-	bufferId, buffer, err := metal.NewBuffer3D[float32](100, 20, 2)
+	// Create a 1-dimensional buffer with enough items to eventually have a 3-dimensional buffer
+	// with a width of 100 items, a height of 20 items, and a depth of 2 items. This will allocate
+	// 16,000 bytes (100 * 20 * 2 * sizeof(float32)).
+	width, height, depth := 100, 20, 2
+	bufferId, buffer1D, err := metal.NewBuffer[float32](width * height * depth)
 	if err != nil {
 		log.Fatalf("Unable to create metal buffer: %v", err)
 	}
 
+	// Fold the buffer into a pair of 2D grids of 100 items wide and 20 items tall.
+	buffer2D := metal.Fold(buffer1D, width*height)
+
+	// Fold the 2D grids into a 3D grid of 100 items wide, 20 items tall, and 2 items deep.
+	buffer3D := metal.Fold(buffer2D, width)
+
 	// bufferId is used to reference the buffer when running a metal function later.
 	_ = bufferId
 
-	// buffer is used to load/retrieve data from the pipeline.
-	_ = buffer
+	// buffer3D is used to load/retrieve data from the pipeline.
+	_ = buffer3D
 }
 
 func ExampleNewFunction() {
@@ -98,15 +112,17 @@ func Example() {
 		log.Fatalf("Unable to create metal function: %v", err)
 	}
 
-	inputId, input, err := metal.NewBuffer2D[int32](width, height)
+	inputId, i, err := metal.NewBuffer[int32](width * height)
 	if err != nil {
 		log.Fatalf("Unable to create metal buffer: %v", err)
 	}
+	input := metal.Fold(i, width)
 
-	outputId, output, err := metal.NewBuffer2D[int32](width, height)
+	outputId, o, err := metal.NewBuffer[int32](width * height)
 	if err != nil {
 		log.Fatalf("Unable to create metal buffer: %v", err)
 	}
+	output := metal.Fold(o, width)
 
 	for i := range input {
 		for j := range input[i] {
@@ -118,7 +134,7 @@ func Example() {
 		X: width,
 		Y: height,
 	}
-	if err := function.Run(grid, nil, []metal.BufferId{inputId, outputId}); err != nil {
+	if err := function.Run(grid, inputId, outputId); err != nil {
 		log.Fatalf("Unable to run metal function: %v", err)
 	}
 
