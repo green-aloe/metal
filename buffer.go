@@ -75,3 +75,17 @@ func NewBuffer[T BufferType](width int) (BufferId, []T, error) {
 
 	return BufferId(bufferId), slice, nil
 }
+
+// NewBufferWith is the same as NewBuffer, but it also initializes the buffer with the provided data.
+func NewBufferWith[T BufferType](data []T) (BufferId, []T, error) {
+	bufferId, buffer, err := NewBuffer[T](len(data))
+	if err != nil {
+		return 0, nil, err
+	}
+
+	for i := range data {
+		buffer[i] = data[i]
+	}
+
+	return bufferId, buffer, nil
+}

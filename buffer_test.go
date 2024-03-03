@@ -290,3 +290,29 @@ func Test_NewBuffer_threadSafe(t *testing.T) {
 		require.Equal(t, nextMetalId-numIter+i, int(idList[i]))
 	}
 }
+
+// Test_NewBufferWith tests that NewBufferWith creates a new metal buffer with the expected
+// underlying data.
+func Test_NewBufferWith(t *testing.T) {
+	t.Run("int32", func(t *testing.T) {
+		input := []int32{1, 2, 3, 4, 5}
+		want := []int32{1, 2, 3, 4, 5}
+		bufferId, buffer, err := NewBufferWith(input)
+		require.NoError(t, err)
+		require.True(t, validId(bufferId))
+		require.Len(t, buffer, len(want))
+		require.Equal(t, cap(want), cap(buffer))
+		require.Equal(t, want, buffer)
+	})
+
+	t.Run("float32", func(t *testing.T) {
+		input := []float32{1.1, 2.2, 3.3, 4.4, 5.5}
+		want := []float32{1.1, 2.2, 3.3, 4.4, 5.5}
+		bufferId, buffer, err := NewBufferWith(input)
+		require.NoError(t, err)
+		require.True(t, validId(bufferId))
+		require.Len(t, buffer, len(want))
+		require.Equal(t, cap(want), cap(buffer))
+		require.Equal(t, want, buffer)
+	})
+}
