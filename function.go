@@ -21,14 +21,16 @@ func init() {
 	C.metal_init()
 }
 
-// A FunctionId references a specific metal function created with NewFunction. It is used to run
-// computational processes with that function.
-type FunctionId int
+// A Function references a specific metal function.
+// It is used to run computational processes on the GPU.
+type Function struct {
+	id int
+}
 
 // NewFunction sets up a new function that will run on the default GPU. It is built with the
 // specified function in the provided metal code. This needs to be called only once for every
-// function.
-func NewFunction(metalSource, funcName string) (FunctionId, error) {
+// function that will be run.
+func NewFunction(metalSource, funcName string) (Function, error) {
 	src := C.CString(metalSource)
 	defer C.free(unsafe.Pointer(src))
 
@@ -40,25 +42,28 @@ func NewFunction(metalSource, funcName string) (FunctionId, error) {
 
 	id := int(C.function_new(src, name, &err))
 	if id == 0 {
-		return 0, metalErrToError(err, "Unable to set up metal function")
+		return Function{}, metalErrToError(err, "Unable to set up metal function")
 	}
 
-	return FunctionId(id), nil
+	return Function{
+		id: id,
+	}, nil
 }
 
-// Valid checks whether or not the function Id is valid and can be used to run a computational
-// process on the GPU.
-func (id FunctionId) Valid() bool {
-	return id > 0
+// Valid checks whether or not the function is valid and can be used to run a computational process
+// on the GPU.
+func (function Function) Valid() bool {
+	return function.id > 0
 }
 
 // String returns the name of the metal function.
-func (id FunctionId) String() string {
-	if !id.Valid() {
+func (function Function) String() string {
+	if !function.Valid() {
 		return ""
 	}
 
-	name := C.function_name(C.int(id))
+	name := C.function_name(C.int(function.id))
+	defer C.free(unsafe.Pointer(name))
 
 	return C.GoString(name)
 }
@@ -97,14 +102,13 @@ type Grid struct {
 // buffer Id, which is used to retrieve the correct block of memory for the buffer. Each buffer is
 // supplied as an argument to the metal function in the order given here. This can be called
 // multiple times for the same Function Id and/or same buffers and is safe for concurrent use.
-func (id FunctionId) Run(grid Grid, buffers ...BufferId) error {
+func (function Function) Run(grid Grid, buffers ...BufferId) error {
 
 	// Make a list of buffer Ids.
 	var bufferIds []C.int
 	for _, buffer := range buffers {
 		bufferIds = append(bufferIds, C.int(buffer))
 	}
-
 	// Get a pointer to the beginning of the list of buffer Ids (if we have any).
 	var bufferPtr *C.int
 	if len(bufferIds) > 0 {
@@ -123,11 +127,12 @@ func (id FunctionId) Run(grid Grid, buffers ...BufferId) error {
 		depth = 1
 	}
 
+	// Set up some space to hold a possible error message.
 	err := C.CString("")
 	defer C.free(unsafe.Pointer(err))
 
 	// Run the computation on the GPU.
-	if ok := C.function_run(C.int(id), width, height, depth, bufferPtr, C.int(len(bufferIds)), &err); !ok {
+	if ok := C.function_run(C.int(function.id), width, height, depth, bufferPtr, C.int(len(bufferIds)), &err); !ok {
 		return metalErrToError(err, "Unable to run metal function")
 	}
 
