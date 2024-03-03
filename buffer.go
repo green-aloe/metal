@@ -83,9 +83,7 @@ func NewBufferWith[T BufferType](data []T) (BufferId, []T, error) {
 		return 0, nil, err
 	}
 
-	for i := range data {
-		buffer[i] = data[i]
-	}
+	copy(buffer, data)
 
 	return bufferId, buffer, nil
 }
