@@ -65,13 +65,13 @@ func ExampleNewFunction() {
 		}
 	`
 
-	functionId, err := metal.NewFunction(source, "sine")
+	function, err := metal.NewFunction(source, "sine")
 	if err != nil {
 		log.Fatalf("Unable to create metal function: %v", err)
 	}
 
-	// functionId is used to actually run the function later.
-	_ = functionId
+	// function is used to run the function later.
+	_ = function
 }
 
 func Example() {
@@ -93,7 +93,7 @@ func Example() {
 		}
 	`
 
-	functionId, err := metal.NewFunction(source, "power")
+	function, err := metal.NewFunction(source, "power")
 	if err != nil {
 		log.Fatalf("Unable to create metal function: %v", err)
 	}
@@ -118,7 +118,7 @@ func Example() {
 		X: width,
 		Y: height,
 	}
-	if err := functionId.Run(grid, nil, []metal.BufferId{inputId, outputId}); err != nil {
+	if err := function.Run(grid, nil, []metal.BufferId{inputId, outputId}); err != nil {
 		log.Fatalf("Unable to run metal function: %v", err)
 	}
 
