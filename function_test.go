@@ -58,6 +58,7 @@ func addId() {
 // the expected message, depending on the conditions of each scenario.
 func Test_Function_NewFunction(t *testing.T) {
 	type subtest struct {
+		name     string
 		source   string
 		function string
 		wantErr  string
@@ -65,46 +66,46 @@ func Test_Function_NewFunction(t *testing.T) {
 
 	subtests := []subtest{
 		{
-			// No source or function name
+			name:    " no source or function name",
 			wantErr: "Unable to set up metal function: Missing metal code",
 		},
 		{
-			// Invalid source, no function name
+			name:    "invalid source, no function name",
 			source:  "invalid",
 			wantErr: "Unable to set up metal function: Missing function name",
 		},
 		{
-			// No source, invalid function name
+			name:     "no source, invalid function name",
 			function: "invalid",
 			wantErr:  "Unable to set up metal function: Missing metal code",
 		},
 		{
-			// Invalid source, invalid function name
+			name:     "invalid source, invalid function name",
 			source:   "invalid",
 			function: "invalid",
 			wantErr:  "Unable to set up metal function: Failed to create library (see console log)",
 		},
 		{
-			// Valid source, no function name
+			name:     "valid source, no function name",
 			source:   sourceTransfer1D,
 			function: "",
 			wantErr:  "Unable to set up metal function: Missing function name",
 		},
 		{
-			// Valid source, invalid function name
+			name:     "valid source, invalid function name",
 			source:   sourceTransfer1D,
 			function: "invalid",
 			wantErr:  "Unable to set up metal function: Failed to find function 'invalid'",
 		},
 		{
-			// Valid source, valid function name
+			name:     "valid source, valid function name",
 			source:   sourceTransfer1D,
 			function: "transfer1D",
 		},
 	}
 
-	for i, subtest := range subtests {
-		t.Run(fmt.Sprintf("Subtest%02d", i+1), func(t *testing.T) {
+	for _, subtest := range subtests {
+		t.Run(subtest.name, func(t *testing.T) {
 			// Try to create a new metal function with the provided source and function name.
 			function, err := NewFunction(subtest.source, subtest.function)
 
@@ -147,22 +148,25 @@ func Test_Function_Valid(t *testing.T) {
 
 // Test_Function_String tests that Function's String method returns the correct function name.
 func Test_Function_String(t *testing.T) {
-	// Test an uninitialized function.
-	var function Function
-	require.Equal(t, "", function.String())
+	t.Run("uninitialized function", func(t *testing.T) {
+		var function Function
+		require.Equal(t, "", function.String())
+	})
 
-	// Test an invalid function.
-	function, err := NewFunction("", "")
-	require.NotNil(t, err)
-	require.False(t, function.Valid())
-	require.Equal(t, "", function.String())
+	t.Run("invalid function", func(t *testing.T) {
+		function, err := NewFunction("", "")
+		require.NotNil(t, err)
+		require.False(t, function.Valid())
+		require.Equal(t, "", function.String())
+	})
 
-	// Test a valid function.
-	function, err = NewFunction(sourceTransfer1D, "transfer1D")
-	require.Nil(t, err)
-	require.True(t, function.Valid())
-	require.True(t, validId(function.id))
-	require.Equal(t, "transfer1D", function.String())
+	t.Run("valid function", func(t *testing.T) {
+		function, err := NewFunction(sourceTransfer1D, "transfer1D")
+		require.Nil(t, err)
+		require.True(t, function.Valid())
+		require.True(t, validId(function.id))
+		require.Equal(t, "transfer1D", function.String())
+	})
 }
 
 // Test_Function_NewFunction_threadSafe tests that NewFunction can handle multiple parallel invocations and
@@ -239,20 +243,23 @@ func Test_Function_Run_invalid(t *testing.T) {
 	require.Nil(t, err)
 	require.True(t, validId(function.id))
 
-	// Test calling Run with an invalid (uninitialized) Function.
-	var emptyFunction Function
-	err = emptyFunction.Run(Grid{})
-	require.NotNil(t, err)
-	require.Equal(t, "Unable to run metal function: Failed to retrieve function", err.Error())
+	t.Run("invalid (uninitialized) function", func(t *testing.T) {
+		var emptyFunction Function
+		err := emptyFunction.Run(Grid{})
+		require.NotNil(t, err)
+		require.Equal(t, "Unable to run metal function: Failed to retrieve function", err.Error())
+	})
 
-	// Test calling Run with a buffer Id for a buffer that doesn't exist.
-	err = function.Run(Grid{}, 10000)
-	require.NotNil(t, err)
-	require.Equal(t, "Unable to run metal function: Failed to retrieve buffer 1/1 using Id 10000", err.Error())
+	t.Run("non-existent buffer", func(t *testing.T) {
+		err := function.Run(Grid{}, 10000)
+		require.NotNil(t, err)
+		require.Equal(t, "Unable to run metal function: Failed to retrieve buffer 1/1 using Id 10000", err.Error())
+	})
 
-	// Test calling Run with an invalid Grid.
-	err = function.Run(Grid{X: -1, Y: -1, Z: -1})
-	require.Nil(t, err)
+	t.Run("invalid grid", func(t *testing.T) {
+		err := function.Run(Grid{X: -1, Y: -1, Z: -1})
+		require.Nil(t, err)
+	})
 }
 
 // Test_Function_Run_1D tests that Function's Run method correctly runs a 1-dimensional
@@ -478,35 +485,23 @@ func Test_Function_Run_threadSafe(t *testing.T) {
 // Test_Function_types tests that specific primitive types in go line up with specific primitive
 // types in metal.
 func Test_Function_types(t *testing.T) {
-	for _, metalType := range []string{
-		"float",
-		"half",
-		"int",
-		"short",
-		"uint",
-		"ushort",
-	} {
-		switch metalType {
-		case "float":
-			testType[float32](t, metalType, false, func(i int) float32 { return float32(i) * 1.1 })
-			testType[float64](t, metalType, true, func(i int) float64 { return float64(i) * 1.1 })
-		case "half":
-			// Go doesn't currently have an equivalent "float16" type
-			testType[float32](t, metalType, true, func(i int) float32 { return float32(i) * 1.1 })
-		case "int":
-			testType[int32](t, metalType, false, func(i int) int32 { return int32(-i) })
-			testType[int64](t, metalType, true, func(i int) int64 { return int64(-i) })
-		case "short":
-			testType[int16](t, metalType, false, func(i int) int16 { return int16(-i) })
-			testType[int32](t, metalType, true, func(i int) int32 { return int32(-i) })
-		case "uint":
-			testType[uint32](t, metalType, false, func(i int) uint32 { return uint32(i) })
-			testType[uint64](t, metalType, true, func(i int) uint64 { return uint64(i) })
-		case "ushort":
-			testType[uint16](t, metalType, false, func(i int) uint16 { return uint16(i) })
-			testType[uint32](t, metalType, true, func(i int) uint32 { return uint32(i) })
-		}
-	}
+	testType[float32](t, "float", false, func(i int) float32 { return float32(i) * 1.1 })
+	testType[float64](t, "float", true, func(i int) float64 { return float64(i) * 1.1 })
+
+	// Go doesn't currently have an equivalent "float16" type
+	testType[float32](t, "half", true, func(i int) float32 { return float32(i) * 1.1 })
+
+	testType[int32](t, "int", false, func(i int) int32 { return int32(-i) })
+	testType[int64](t, "int", true, func(i int) int64 { return int64(-i) })
+
+	testType[int16](t, "short", false, func(i int) int16 { return int16(-i) })
+	testType[int32](t, "short", true, func(i int) int32 { return int32(-i) })
+
+	testType[uint32](t, "uint", false, func(i int) uint32 { return uint32(i) })
+	testType[uint64](t, "uint", true, func(i int) uint64 { return uint64(i) })
+
+	testType[uint16](t, "ushort", false, func(i int) uint16 { return uint16(i) })
+	testType[uint32](t, "ushort", true, func(i int) uint32 { return uint32(i) })
 }
 
 // testType runs a test for a buffer type.
