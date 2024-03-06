@@ -12,7 +12,8 @@ void metal_init();
 // Functions that must be called once for every metal function
 int function_new(const char *metalCode, const char *funcName, const char **);
 _Bool function_run(int functionId, int width, int height, int depth,
-                   int *bufferIds, int numBufferIds, const char **);
+                   float *args, int numArgs, int *bufferIds, int numBufferIds,
+                   const char **error);
 
 // Functions for querying data on a metal function
 const char *function_name(int);

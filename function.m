@@ -21,10 +21,10 @@ typedef struct {
 } _function;
 
 // Set up a new pipeline for executing the specified function in the provided
-// MTL code on the default GPU. This returns an Id that must be used to actually
-// run the function. This should be called only once for every function. If any
-// error is encountered initializing the metal function, this returns 0 and sets
-// an error message in error.
+// MTL code on the default GPU. This returns an Id that must be used to run the
+// function. This should be called only once for every function. If any error is
+// encountered initializing the metal function, this returns 0 and sets an error
+// message in error.
 int function_new(const char *metalCode, const char *funcName,
                  const char **error) {
   if (strlen(metalCode) == 0) {
@@ -62,8 +62,8 @@ int function_new(const char *metalCode, const char *funcName,
   }
 
   // Get a reference to the function in the code that's now in the new library.
-  // (Note that this is not executable yet. We need a pipeline in order to
-  // actually run this function.)
+  // (Note that this is not executable yet. We need a pipeline in order to run
+  // this function.)
   function->function =
       [library newFunctionWithName:[NSString stringWithUTF8String:funcName]];
   if (function->function == nil) {
@@ -107,7 +107,8 @@ int function_new(const char *metalCode, const char *funcName,
 // not thread-safe. If any error is encountered running the metal function, this
 // returns false and sets an error message in error.
 _Bool function_run(int functionId, int width, int height, int depth,
-                   int *bufferIds, int numBufferIds, const char **error) {
+                   float *args, int numArgs, int *bufferIds, int numBufferIds,
+                   const char **error) {
   // Fetch the function from the cache.
   _function *function = cache_retrieve(functionId);
   if (function == nil) {
@@ -123,22 +124,28 @@ _Bool function_run(int functionId, int width, int height, int depth,
     return false;
   }
 
-  // Set up an encoder to actually write the (compute pass) commands and
-  // parameters to the command buffer we just created.
+  // Set up an encoder to write the (compute pass) commands and parameters to
+  // the command buffer we just created.
   id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
   if (encoder == nil) {
     logError(error, @"Failed to set up compute encoder");
     return false;
   }
 
-  // Set the pipeline that the command will use.
+  // Set the pipeline that the encoder will use.
   [encoder setComputePipelineState:function->pipeline];
 
-  // Set the buffers that will be passed as the arguments to the function. The
-  // indexes for the buffers here need to match their order in the function
-  // declaration. We currently only support using the entire buffer without any
+  // Set the arguments that will be passed to the function. The indexes for the
+  // arguments here need to match their order in the function declaration. We'll
+  // start with the arguments that are static values, and then we'll add the
+  // buffers. We currently support using only the entire buffer without any
   // offsets, which could be used to, say, use one part of a buffer for one
   // function argument and the other part for a different argument.
+  int index = 0;
+  for (int i = 0; i < numArgs; i++) {
+    // Add the static argument bytes to the encoder at the appropriate index.
+    [encoder setBytes:&args[i] length:sizeof(float) atIndex:index++];
+  }
   for (int i = 0; i < numBufferIds; i++) {
     // Retrieve the buffer for this Id.
     id<MTLBuffer> buffer = cache_retrieve(bufferIds[i]);
@@ -151,8 +158,8 @@ _Bool function_run(int functionId, int width, int height, int depth,
       return false;
     }
 
-    // Add the buffer to the command with the appropriate index.
-    [encoder setBuffer:buffer offset:0 atIndex:i];
+    // Add the buffer to the encoder at the appropriate index.
+    [encoder setBuffer:buffer offset:0 atIndex:index++];
   }
 
   // Specify how many threads we need to perform all the calculations (one
