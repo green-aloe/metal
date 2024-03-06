@@ -16,8 +16,8 @@ import (
 )
 
 // Fold folds a 1-dimensional slice of N items into a 2-dimensional slice of width x (N/width)
-// items. width must equally divide the number of items. All sub-slices in the returned slice have a
-// capacity equal to N/width.
+// items. Both slices have the same backing array. width must equally divide the number of items.
+// All sub-slices in the returned slice have a capacity equal to N/width.
 func Fold[T any](items []T, width int) [][]T {
 	if len(items) == 0 || width < 1 || len(items)%width != 0 {
 		return nil
@@ -47,9 +47,9 @@ func convertList[I, O BufferType](inputs []I) ([]O, *O) {
 	}
 
 	// Convert the inputs from one type to another.
-	var outputs []O
+	outputs := make([]O, len(inputs))
 	for i := range inputs {
-		outputs = append(outputs, O(inputs[i]))
+		outputs[i] = O(inputs[i])
 
 	}
 
