@@ -92,18 +92,14 @@ func Example() {
 	width := 3
 	height := 3
 
-	setInput := func(i, j int) int32 {
-		return int32(i*height + j)
-	}
-
 	source := `
 		#include <metal_stdlib>
 
 		using namespace metal;
 
-		kernel void power(constant int *input, device int *result, uint2 pos [[thread_position_in_grid]], uint2 grid_size [[threads_per_grid]]) {
+		kernel void power(constant float *multiplier, constant int *input, device int *result, uint2 pos [[thread_position_in_grid]], uint2 grid_size [[threads_per_grid]]) {
 			int index = (pos.x * grid_size.y) + pos.y;
-			result[index] = input[index] * input[index];
+			result[index] = input[index] * input[index] * *multiplier;
 		}
 	`
 
@@ -126,15 +122,18 @@ func Example() {
 
 	for i := range input {
 		for j := range input[i] {
-			input[i][j] = setInput(i, j)
+			input[i][j] = int32(i*height + j)
 		}
 	}
 
-	grid := metal.Grid{
-		X: width,
-		Y: height,
-	}
-	if err := function.Run(grid, inputId, outputId); err != nil {
+	if err := function.Run(metal.RunParameters{
+		Grid: metal.Grid{
+			X: width,
+			Y: height,
+		},
+		Arguments: []float32{2},
+		BufferIds: []metal.BufferId{inputId, outputId},
+	}); err != nil {
 		log.Fatalf("Unable to run metal function: %v", err)
 	}
 
@@ -142,5 +141,5 @@ func Example() {
 	fmt.Println(output)
 	// Output:
 	// [[0 1 2] [3 4 5] [6 7 8]]
-	// [[0 1 4] [9 16 25] [36 49 64]]
+	// [[0 2 8] [18 32 50] [72 98 128]]
 }
