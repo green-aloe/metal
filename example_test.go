@@ -131,7 +131,7 @@ func Example() {
 			X: width,
 			Y: height,
 		},
-		Arguments: []float32{2},
+		Inputs:    []float32{2},
 		BufferIds: []metal.BufferId{inputId, outputId},
 	}); err != nil {
 		log.Fatalf("Unable to run metal function: %v", err)
