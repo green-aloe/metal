@@ -107,8 +107,8 @@ int function_new(const char *metalCode, const char *funcName,
 // not thread-safe. If any error is encountered running the metal function, this
 // returns false and sets an error message in error.
 _Bool function_run(int functionId, int width, int height, int depth,
-                   float *args, int numArgs, int *bufferIds, int numBufferIds,
-                   const char **error) {
+                   float *inputs, int numInputs, int *bufferIds,
+                   int numBufferIds, const char **error) {
   // Fetch the function from the cache.
   _function *function = cache_retrieve(functionId);
   if (function == nil) {
@@ -142,9 +142,9 @@ _Bool function_run(int functionId, int width, int height, int depth,
   // offsets, which could be used to, say, use one part of a buffer for one
   // function argument and the other part for a different argument.
   int index = 0;
-  for (int i = 0; i < numArgs; i++) {
+  for (int i = 0; i < numInputs; i++) {
     // Add the static argument bytes to the encoder at the appropriate index.
-    [encoder setBytes:&args[i] length:sizeof(float) atIndex:index++];
+    [encoder setBytes:&inputs[i] length:sizeof(float) atIndex:index++];
   }
   for (int i = 0; i < numBufferIds; i++) {
     // Retrieve the buffer for this Id.
