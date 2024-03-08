@@ -98,25 +98,31 @@ type Grid struct {
 	Z int
 }
 
-// Run executes the computational function on the GPU. buffers is a list of buffers that have a
-// buffer Id, which is used to retrieve the correct block of memory for the buffer. Each buffer is
-// supplied as an argument to the metal function in the order given here. This can be called
-// multiple times for the same Function Id and/or same buffers and is safe for concurrent use.
-func (function Function) Run(grid Grid, buffers ...BufferId) error {
+type RunParameters struct {
+	// Grid that defines the dimensions of the buffers used to run the computation.
+	Grid Grid
+	// List of static inputs that are used to run the computation. These are not indexed by position
+	// in the grid like the buffers are but are instead used as constants for every iteration. They
+	// are supplied as the first arguments to the metal function in the order given here.
+	Inputs []float32
+	// List of buffer Ids that are used to retrieve the correct block of memory for the buffers. The
+	// buffers are indexed by position in the grid. They are supplied as arguments to the metal
+	// function after the inputs in the order given here.
+	BufferIds []BufferId
+}
 
-	// Make a list of buffer Ids.
-	var bufferIds []C.int
-	for _, buffer := range buffers {
-		bufferIds = append(bufferIds, C.int(buffer))
-	}
-	// Get a pointer to the beginning of the list of buffer Ids (if we have any).
-	var bufferPtr *C.int
-	if len(bufferIds) > 0 {
-		bufferPtr = &bufferIds[0]
-	}
+// Run executes the computational function on the GPU. This can be called multiple times for the
+// same Function Id and/or same buffers and is safe for concurrent use.
+func (function Function) Run(params RunParameters) error {
+
+	// Make a list of inputs, and get a pointer to the beginning of them (if we have any).
+	inputs, inputsPtr := convertList[float32, C.float](params.Inputs)
+
+	// Make a list of buffer Ids, and get a pointer to the beginning of them (if we have any).
+	bufferIds, bufferIdsPtr := convertList[BufferId, C.int](params.BufferIds)
 
 	// Set up the dimensions of the grid. Every dimension must be at least one unit long.
-	width, height, depth := C.int(grid.X), C.int(grid.Y), C.int(grid.Z)
+	width, height, depth := C.int(params.Grid.X), C.int(params.Grid.Y), C.int(params.Grid.Z)
 	if width < 1 {
 		width = 1
 	}
@@ -132,7 +138,7 @@ func (function Function) Run(grid Grid, buffers ...BufferId) error {
 	defer C.free(unsafe.Pointer(err))
 
 	// Run the computation on the GPU.
-	if ok := C.function_run(C.int(function.id), width, height, depth, bufferPtr, C.int(len(bufferIds)), &err); !ok {
+	if !C.function_run(C.int(function.id), width, height, depth, inputsPtr, C.int(len(inputs)), bufferIdsPtr, C.int(len(bufferIds)), &err) {
 		return metalErrToError(err, "Unable to run metal function")
 	}
 
