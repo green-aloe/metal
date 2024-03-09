@@ -321,7 +321,7 @@ func Test_Function_Run_2D(t *testing.T) {
 
 		t.Run(strconv.Itoa(width), func(t *testing.T) {
 
-			// Set up a metal function that simply transfers all inputs to the outputs.
+			// Set up a metal function that simply transfers all inputs to the outputs and adds 1.
 			function, err := NewFunction(sourceTransfer2D, "transfer2D")
 			require.Nil(t, err)
 			require.True(t, validId(function.id))
@@ -344,22 +344,46 @@ func Test_Function_Run_2D(t *testing.T) {
 				}
 			}
 
+			// Mirror the inputs to the expected outputs with an increment of 1.
+			want := make([][]float32, len(input))
+			for i := range input {
+				want[i] = make([]float32, len(input[i]))
+				for j := range input[i] {
+					want[i][j] = input[i][j] + 1
+				}
+			}
+
 			// Run the function and test that all values were transferred from the input to the output.
 			require.NotEqual(t, input, output)
-			err = function.Run(Grid{X: width, Y: height}, inputId, outputId)
+			err = function.Run(RunParameters{
+				Grid: Grid{
+					X: width,
+					Y: height,
+				},
+				Inputs:    []float32{1},
+				BufferIds: []BufferId{inputId, outputId},
+			})
 			require.Nil(t, err)
-			require.Equal(t, input, output)
+			require.Equal(t, want, output)
 
 			// Set some different values in the input and run the function again.
 			for i := range input {
 				for j := range input[i] {
 					input[i][j] = float32(i*height*2 + j + 100)
+					want[i][j] = input[i][j] + 1
 				}
 			}
 			require.NotEqual(t, input, output)
-			err = function.Run(Grid{X: width, Y: height}, inputId, outputId)
+			err = function.Run(RunParameters{
+				Grid: Grid{
+					X: width,
+					Y: height,
+				},
+				Inputs:    []float32{1},
+				BufferIds: []BufferId{inputId, outputId},
+			})
 			require.Nil(t, err)
-			require.Equal(t, input, output)
+			require.Equal(t, want, output)
 		})
 	}
 }
