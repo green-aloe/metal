@@ -236,8 +236,7 @@ func Test_Function_NewFunction_threadSafe(t *testing.T) {
 	}
 }
 
-// Test_Function_Run_invalid tests that Function's Run method correctly handles invalid
-// parameters.
+// Test_Function_Run_invalid tests that Function's Run method correctly handles invalid parameters.
 func Test_Function_Run_invalid(t *testing.T) {
 	function, err := NewFunction(sourceNoop, "noop")
 	require.Nil(t, err)
@@ -245,19 +244,19 @@ func Test_Function_Run_invalid(t *testing.T) {
 
 	t.Run("invalid (uninitialized) function", func(t *testing.T) {
 		var emptyFunction Function
-		err := emptyFunction.Run(Grid{})
+		err := emptyFunction.Run(RunParameters{})
 		require.NotNil(t, err)
 		require.Equal(t, "Unable to run metal function: Failed to retrieve function", err.Error())
 	})
 
 	t.Run("non-existent buffer", func(t *testing.T) {
-		err := function.Run(Grid{}, 10000)
+		err := function.Run(RunParameters{BufferIds: []BufferId{10000}})
 		require.NotNil(t, err)
 		require.Equal(t, "Unable to run metal function: Failed to retrieve buffer 1/1 using Id 10000", err.Error())
 	})
 
 	t.Run("invalid grid", func(t *testing.T) {
-		err := function.Run(Grid{X: -1, Y: -1, Z: -1})
+		err := function.Run(RunParameters{Grid: Grid{X: -1, Y: -1, Z: -1}})
 		require.Nil(t, err)
 	})
 }
