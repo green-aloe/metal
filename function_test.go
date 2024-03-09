@@ -424,7 +424,14 @@ func Test_Function_Run_3D(t *testing.T) {
 
 			// Run the function and test that all values were transferred from the input to the output.
 			require.NotEqual(t, input, output)
-			err = function.Run(Grid{X: width, Y: height, Z: depth}, inputId, outputId)
+			err = function.Run(RunParameters{
+				Grid: Grid{
+					X: width,
+					Y: height,
+					Z: depth,
+				},
+				BufferIds: []BufferId{inputId, outputId},
+			})
 			require.Nil(t, err)
 			require.Equal(t, input, output)
 
@@ -437,7 +444,14 @@ func Test_Function_Run_3D(t *testing.T) {
 				}
 			}
 			require.NotEqual(t, input, output)
-			err = function.Run(Grid{X: width, Y: height, Z: depth}, inputId, outputId)
+			err = function.Run(RunParameters{
+				Grid: Grid{
+					X: width,
+					Y: height,
+					Z: depth,
+				},
+				BufferIds: []BufferId{inputId, outputId},
+			})
 			require.Nil(t, err)
 			require.Equal(t, input, output)
 		})
