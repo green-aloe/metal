@@ -287,7 +287,12 @@ func Test_Function_Run_1D(t *testing.T) {
 
 			// Run the function and test that all values were transferred from the input to the output.
 			require.NotEqual(t, input, output)
-			err = function.Run(Grid{X: width}, inputId, outputId)
+			err = function.Run(RunParameters{
+				Grid: Grid{
+					X: width,
+				},
+				BufferIds: []BufferId{inputId, outputId},
+			})
 			require.Nil(t, err)
 			require.Equal(t, input, output)
 
@@ -296,7 +301,12 @@ func Test_Function_Run_1D(t *testing.T) {
 				input[i] = float32(i * i)
 			}
 			require.NotEqual(t, input, output)
-			err = function.Run(Grid{X: width}, inputId, outputId)
+			err = function.Run(RunParameters{
+				Grid: Grid{
+					X: width,
+				},
+				BufferIds: []BufferId{inputId, outputId},
+			})
 			require.Nil(t, err)
 			require.Equal(t, input, output)
 		})
