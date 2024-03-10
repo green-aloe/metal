@@ -579,7 +579,12 @@ func testType[T BufferType](t *testing.T, metalType string, wantFail bool, sette
 		}
 
 		// Run the metal function.
-		function.Run(Grid{X: 100}, inputId, outputId)
+		err = function.Run(RunParameters{
+			Grid: Grid{
+				X: 100,
+			},
+			BufferIds: []BufferId{inputId, outputId},
+		})
 		require.Nil(t, err)
 
 		// Test that the inputs were either correctly or incorrectly transferred over to the
