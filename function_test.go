@@ -504,7 +504,10 @@ func Test_Function_Run_threadSafe(t *testing.T) {
 		go func(iteration int) {
 			wg.Wait()
 
-			err := function.Run(grid, inputId, outputId)
+			err := function.Run(RunParameters{
+				Grid:      grid,
+				BufferIds: []BufferId{inputId, outputId},
+			})
 
 			dataCh <- data{
 				iteration: iteration,
