@@ -626,7 +626,12 @@ func Benchmark_Run(b *testing.B) {
 
 		b.Run(fmt.Sprintf("Parallel_%d", width), func(b *testing.B) {
 			for n := 0; n < b.N; n++ {
-				function.Run(Grid{X: 1}, inputId, outputId)
+				function.Run(RunParameters{
+					Grid: Grid{
+						X: width,
+					},
+					BufferIds: []BufferId{inputId, outputId},
+				})
 			}
 		})
 	}
