@@ -630,6 +630,7 @@ func Benchmark_Run(b *testing.B) {
 					Grid: Grid{
 						X: width,
 					},
+					Inputs:    []float32{0.01},
 					BufferIds: []BufferId{inputId, outputId},
 				})
 			}
