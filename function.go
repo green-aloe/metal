@@ -63,7 +63,6 @@ func (function Function) String() string {
 	}
 
 	name := C.function_name(C.int(function.id))
-	defer C.free(unsafe.Pointer(name))
 
 	return C.GoString(name)
 }
