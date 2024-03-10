@@ -150,6 +150,7 @@ func Test_Function_Valid(t *testing.T) {
 func Test_Function_String(t *testing.T) {
 	t.Run("uninitialized function", func(t *testing.T) {
 		var function Function
+		require.False(t, function.Valid())
 		require.Equal(t, "", function.String())
 	})
 
