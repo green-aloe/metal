@@ -67,7 +67,7 @@ func (function Function) String() string {
 	return C.GoString(name)
 }
 
-// A Grid specifies how many threads we need to perform all the calculations. There should be one
+// A Grid specifies how many threads are needed to perform all the calculations. There should be one
 // thread per calculation.
 //
 // Typically, this is organized as a 3-dimensional grid of threads, even if all three dimensions are
@@ -75,19 +75,19 @@ func (function Function) String() string {
 // dimension depends on how many calculations need to be performed and how the data is represented
 // in a 3-dimensional grid. Here some examples:
 //
-// - If the computational problem is to square a list of numbers, then we need only one dimension:
-// the list of numbers to square. If the list has 10,000 numbers in it, then we would use a (10,000
-// x 1 x 1) grid. If the computational problem is to multiple one list of numbers against another
-// list, then we still need only one dimension, because there's only one operation per item in the
+// - If the computational problem is to square a list of numbers, then only one dimension is needed:
+// the list of numbers to square. If the list has 10,000 numbers in it, then one would use a (10,000
+// x 1 x 1) grid. If the computational problem is to multiply one list of numbers against another
+// list, then only one dimension is still needed, because there's only one operation per item in the
 // list.
 //
-// - If the computational problem is to perform an operation on every pixel in an image, then we can
-// conceptually break that up into two dimensions, even if the list of pixels is a long,
-// 1-dimensional array. If the image is 600 x 800 pixels, then we would use a (600 x 800 x 1) grid.
+// - If the computational problem is to perform an operation on every pixel in an image, then it can
+// be conceptually broken up into two dimensions, even if the list of pixels is a long,
+// 1-dimensional array. If the image is 600 x 800 pixels, then one would use a (600 x 800 x 1) grid.
 //
 // - If the computational problem is to calculate the vector of objects in a 3-dimensional space,
-// then we can use all three dimensions in the grid to represent the entire space. If the space is
-// 100 units x 200 units x 300 units, then we would use a (100 x 200 x 300) grid.
+// then all three dimensions in the grid can be used to represent the entire space. If the space is
+// 100 units x 200 units x 300 units, then one would use a (100 x 200 x 300) grid.
 //
 // For more information on grid sizes, see
 // https://developer.apple.com/documentation/metal/compute_passes/calculating_threadgroup_and_grid_sizes.
