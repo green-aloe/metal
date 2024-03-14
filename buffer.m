@@ -25,7 +25,7 @@ int buffer_new(int size, const char **error) {
   }
 
   // Add the buffer to the buffer cache and return its unique Id.
-  int bufferId = cache_cache(buffer);
+  int bufferId = cache_cache(buffer, error);
   if (bufferId == 0) {
     logError(error, @"Failed to cache buffer");
     return 0;
@@ -34,10 +34,10 @@ int buffer_new(int size, const char **error) {
   return bufferId;
 }
 
-// Retrieve a buffer from the cache. If any error is encountered retrieving the
-// buffer, this returns nil and sets an error message in error.
+// Retrieve a buffer from the cache. If any error is encountered retrieving
+// the buffer, this returns nil and sets an error message in error.
 void *buffer_retrieve(int bufferId, const char **error) {
-  id<MTLBuffer> buffer = cache_retrieve(bufferId);
+  id<MTLBuffer> buffer = cache_retrieve(bufferId, error);
   if (buffer == nil) {
     logError(error, @"Failed to retrieve buffer");
     return nil;
@@ -49,7 +49,7 @@ void *buffer_retrieve(int bufferId, const char **error) {
 // Free a cached buffer. If any error is encountered relinquishing the memory,
 // this sets an error message in error.
 void buffer_close(int bufferId, const char **error) {
-  id<MTLBuffer> buffer = cache_retrieve(bufferId);
+  id<MTLBuffer> buffer = cache_retrieve(bufferId, error);
   if (buffer == nil) {
     logError(error, @"Failed to retrieve buffer");
     return;
