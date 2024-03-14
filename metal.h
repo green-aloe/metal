@@ -22,5 +22,6 @@ const char *function_name(int);
 // a metal function
 int buffer_new(int size, const char **);
 void *buffer_retrieve(int bufferId, const char **);
+void buffer_close(int bufferId, const char **);
 
 #endif
