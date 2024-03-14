@@ -44,8 +44,6 @@ int cache_cache(void *item, const char **error) {
 // Retrieve an item from the cache. This returns nil and logs a message if any
 // error is encountered and the item is not retrieved.
 void *cache_retrieve(int cacheId, const char **error) {
-  void *item = nil;
-
   if (cacheId < 1) {
     logError(error, @"Invalid cache Id: %d", cacheId);
     return nil;
@@ -61,10 +59,8 @@ void *cache_retrieve(int cacheId, const char **error) {
     // it into a 0-based index to retrieve it from the cache.
     int index = cacheId - 1;
 
-    item = cache[index];
+    return cache[index];
   }
-
-  return item;
 }
 
 // Remove an item from the cache.
