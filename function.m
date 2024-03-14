@@ -93,13 +93,7 @@ int function_new(const char *metalCode, const char *funcName,
   }
 
   // Save the function for later use and return an Id referencing it.
-  int functionId = cache_cache(function);
-  if (functionId == 0) {
-    logError(error, @"Failed to cache function");
-    return 0;
-  }
-
-  return functionId;
+  return cache_cache(function, error);
 }
 
 // Execute the computational process on the GPU. Each buffer is supplied as an
@@ -110,7 +104,7 @@ _Bool function_run(int functionId, int width, int height, int depth,
                    float *inputs, int numInputs, int *bufferIds,
                    int numBufferIds, const char **error) {
   // Fetch the function from the cache.
-  _function *function = cache_retrieve(functionId);
+  _function *function = cache_retrieve(functionId, error);
   if (function == nil) {
     logError(error, @"Failed to retrieve function");
     return false;
@@ -148,7 +142,7 @@ _Bool function_run(int functionId, int width, int height, int depth,
   }
   for (int i = 0; i < numBufferIds; i++) {
     // Retrieve the buffer for this Id.
-    id<MTLBuffer> buffer = cache_retrieve(bufferIds[i]);
+    id<MTLBuffer> buffer = cache_retrieve(bufferIds[i], error);
     if (buffer == nil) {
       logError(
           error,
@@ -208,7 +202,7 @@ _Bool function_run(int functionId, int width, int height, int depth,
 // error.
 const char *function_name(int functionId) {
   // Fetch the function from the cache.
-  _function *function = cache_retrieve(functionId);
+  _function *function = cache_retrieve(functionId, nil);
   if (function == nil) {
     logError(nil, @"Failed to retrieve function");
     return nil;
