@@ -56,8 +56,8 @@ int function_new(const char *metalCode, const char *funcName,
                            options:[MTLCompileOptions new]
                              error:&libraryError];
   if (library == nil) {
-    logError(error, @"Failed to create library (see console log)");
-    NSLog(@"Failed to create library: %@", libraryError);
+    logError(error, [NSString stringWithFormat:@"Failed to create library: %@",
+                                               libraryError]);
     return 0;
   }
 
@@ -80,8 +80,8 @@ int function_new(const char *metalCode, const char *funcName,
       [device newComputePipelineStateWithFunction:function->function
                                             error:&pipelineError];
   if (function->pipeline == nil) {
-    logError(error, @"Failed to create pipeline (see console log)");
-    NSLog(@"Failed to create pipeline: %@", pipelineError);
+    logError(error, [NSString stringWithFormat:@"Failed to create pipeline: %@",
+                                               pipelineError]);
     return 0;
   }
 
