@@ -16,9 +16,9 @@ void cache_init() { cacheLock = [[NSLock alloc] init]; }
 
 // Add an item to the cache. This returns 0 and logs a message if any error is
 // encountered and the item is not cached.
-int cache_cache(void *item) {
+int cache_cache(void *item, const char **error) {
   if (item == nil) {
-    NSLog(@"Missing item to cache");
+    logError(error, @"Missing item to cache");
     return 0;
   }
 
@@ -28,7 +28,7 @@ int cache_cache(void *item) {
     numItems++;
     cache = realloc(cache, sizeof(void *) * numItems);
     if (cache == nil) {
-      NSLog(@"Failed to grow cache");
+      logError(error, @"Failed to grow cache");
       return 0;
     }
 
@@ -43,17 +43,17 @@ int cache_cache(void *item) {
 
 // Retrieve an item from the cache. This returns nil and logs a message if any
 // error is encountered and the item is not retrieved.
-void *cache_retrieve(int cacheId) {
+void *cache_retrieve(int cacheId, const char **error) {
   void *item = nil;
 
   if (cacheId < 1) {
-    NSLog(@"Invalid cache Id: %d", cacheId);
+    logError(error, @"Invalid cache Id: %d", cacheId);
     return nil;
   }
 
   @synchronized(cacheLock) {
     if (cacheId > numItems) {
-      NSLog(@"Invalid cache Id: %d", cacheId);
+      logError(error, @"Invalid cache Id: %d", cacheId);
       return nil;
     }
 
@@ -68,15 +68,15 @@ void *cache_retrieve(int cacheId) {
 }
 
 // Remove an item from the cache.
-void cache_remove(int cacheId) {
+void cache_remove(int cacheId, const char **error) {
   if (cacheId < 1) {
-    NSLog(@"Invalid cache Id: %d", cacheId);
+    logError(error, @"Invalid cache Id: %d", cacheId);
     return;
   }
 
   @synchronized(cacheLock) {
     if (cacheId > numItems) {
-      NSLog(@"Invalid cache Id: %d", cacheId);
+      logError(error, @"Invalid cache Id: %d", cacheId);
       return;
     }
 
