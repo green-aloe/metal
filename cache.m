@@ -1,6 +1,7 @@
 // go:build darwin
 //  +build darwin
 
+#include "error.h"
 #import <Metal/Metal.h>
 
 void **cache = nil;
@@ -64,16 +65,16 @@ void *cache_retrieve(int cacheId, const char **error) {
 }
 
 // Remove an item from the cache.
-void cache_remove(int cacheId, const char **error) {
+_Bool cache_remove(int cacheId, const char **error) {
   if (cacheId < 1) {
     logError(error, @"Invalid cache Id: %d", cacheId);
-    return;
+    return false;
   }
 
   @synchronized(cacheLock) {
     if (cacheId > numItems) {
       logError(error, @"Invalid cache Id: %d", cacheId);
-      return;
+      return false;
     }
 
     // A cache Id is an item's 1-based index in the cache. We need to convert
@@ -83,4 +84,6 @@ void cache_remove(int cacheId, const char **error) {
     // Set the item to nil.
     cache[index] = nil;
   }
+
+  return true;
 }

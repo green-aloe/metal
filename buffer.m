@@ -48,15 +48,15 @@ void *buffer_retrieve(int bufferId, const char **error) {
 
 // Free a cached buffer. If any error is encountered relinquishing the memory,
 // this sets an error message in error.
-void buffer_close(int bufferId, const char **error) {
+_Bool buffer_close(int bufferId, const char **error) {
   id<MTLBuffer> buffer = cache_retrieve(bufferId, error);
   if (buffer == nil) {
     logError(error, @"Failed to retrieve buffer");
-    return;
+    return false;
   }
 
   [buffer setPurgeableState:MTLPurgeableStateEmpty];
   [buffer release];
 
-  cache_remove(bufferId, error);
+  return cache_remove(bufferId, error);
 }
