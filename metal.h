@@ -10,18 +10,19 @@
 void metal_init();
 
 // Functions that must be called once for every metal function
-int function_new(const char *metalCode, const char *funcName, const char **);
+int function_new(const char *metalCode, const char *funcName,
+                 const char **error);
 _Bool function_run(int functionId, int width, int height, int depth,
                    float *args, int numArgs, int *bufferIds, int numBufferIds,
                    const char **error);
 
 // Functions for querying data on a metal function
-const char *function_name(int);
+const char *function_name(int functionId);
 
 // Functions that must be called once for every buffer used as an argument to
 // a metal function
-int buffer_new(int size, const char **);
-void *buffer_retrieve(int bufferId, const char **);
-void buffer_close(int bufferId, const char **);
+int buffer_new(int size, const char **error);
+void *buffer_retrieve(int bufferId, const char **error);
+_Bool buffer_close(int bufferId, const char **error);
 
 #endif
