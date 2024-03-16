@@ -6,8 +6,8 @@
 
 void cache_init();
 
-int cache_cache(void *item, **error);
-void *cache_retrieve(int cacheId, **error);
-void cache_remove(int cacheId, **error);
+int cache_cache(void *item, const char **error);
+void *cache_retrieve(int cacheId, const char **error);
+_Bool cache_remove(int cacheId, const char **error);
 
 #endif
