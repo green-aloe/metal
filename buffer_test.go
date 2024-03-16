@@ -15,6 +15,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Test_Globals tests the global variables and constants for buffers.
+func Test_Globals(t *testing.T) {
+	t.Run("vars", func(t *testing.T) {
+		require.Equal(t, "Invalid buffer Id", ErrInvalidBufferId.Error())
+	})
+}
+
 // Test_BufferId_Valid tests that BufferId's Valid method correctly identifies a valid buffer Id.
 func Test_BufferId_Valid(t *testing.T) {
 	// A valid buffer Id has a positive value. Let's run through a bunch of numbers and test that
@@ -314,5 +321,34 @@ func Test_NewBufferWith(t *testing.T) {
 		require.Len(t, buffer, len(want))
 		require.Equal(t, cap(want), cap(buffer))
 		require.Equal(t, want, buffer)
+	})
+}
+
+// Test_BufferId_Close tests the Close method of the BufferId type.
+func Test_BufferId_Close(t *testing.T) {
+	t.Run("invalid buffer id", func(t *testing.T) {
+		var nilPtr *BufferId
+		require.ErrorIs(t, nilPtr.Close(), ErrInvalidBufferId)
+
+		var zeroId BufferId
+		require.ErrorIs(t, zeroId.Close(), ErrInvalidBufferId)
+	})
+
+	t.Run("invalid cache id", func(t *testing.T) {
+		bufferId := BufferId(2)
+		require.EqualError(t, bufferId.Close(), "Unable to free buffer: Invalid cache Id: 2")
+	})
+
+	t.Run("valid buffer id", func(t *testing.T) {
+		bufferId, buffer, err := NewBuffer[int32](10)
+		require.NoError(t, err)
+
+		for i := range buffer {
+			buffer[i] = int32(i + 1)
+		}
+
+		require.NoError(t, bufferId.Close())
+
+		require.False(t, bufferId.Valid())
 	})
 }

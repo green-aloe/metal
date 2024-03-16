@@ -18,6 +18,10 @@ import (
 	"unsafe"
 )
 
+var (
+	ErrInvalidBufferId = errors.New("Invalid buffer Id")
+)
+
 // A BufferId references a specific metal buffer created with NewBuffer*.
 type BufferId int32
 
@@ -86,4 +90,24 @@ func NewBufferWith[T BufferType](data []T) (BufferId, []T, error) {
 	copy(buffer, data)
 
 	return bufferId, buffer, nil
+}
+
+// Close releases the buffer from the GPU memory. The buffer Id becomes invalid after this call.
+func (id *BufferId) Close() error {
+	if id == nil || !id.Valid() {
+		return ErrInvalidBufferId
+	}
+
+	// Set up some space to hold a possible error message.
+	err := C.CString("")
+	defer C.free(unsafe.Pointer(err))
+
+	if !C.buffer_close(C.int(*id), &err) {
+		return metalErrToError(err, "Unable to free buffer")
+	}
+
+	// Clear the buffer Id to mark that it's no longer valid.
+	*id = 0
+
+	return nil
 }
