@@ -61,41 +61,41 @@ func Test_Function_NewFunction(t *testing.T) {
 		name     string
 		source   string
 		function string
-		wantErr  string
+		wantErrs []string
 	}
 
 	subtests := []subtest{
 		{
-			name:    " no source or function name",
-			wantErr: "Unable to set up metal function: Missing metal code",
+			name:     " no source or function name",
+			wantErrs: []string{"Unable to set up metal function: Missing metal code"},
 		},
 		{
-			name:    "invalid source, no function name",
-			source:  "invalid",
-			wantErr: "Unable to set up metal function: Missing function name",
+			name:     "invalid source, no function name",
+			source:   "invalid",
+			wantErrs: []string{"Unable to set up metal function: Missing function name"},
 		},
 		{
 			name:     "no source, invalid function name",
 			function: "invalid",
-			wantErr:  "Unable to set up metal function: Missing metal code",
+			wantErrs: []string{"Unable to set up metal function: Missing metal code"},
 		},
 		{
 			name:     "invalid source, invalid function name",
 			source:   "invalid",
 			function: "invalid",
-			wantErr:  "Unable to set up metal function: Failed to create library (see console log)",
+			wantErrs: []string{"Unable to set up metal function: Failed to create library", "unknown type name 'invalid'"},
 		},
 		{
 			name:     "valid source, no function name",
 			source:   sourceTransfer1D,
 			function: "",
-			wantErr:  "Unable to set up metal function: Missing function name",
+			wantErrs: []string{"Unable to set up metal function: Missing function name"},
 		},
 		{
 			name:     "valid source, invalid function name",
 			source:   sourceTransfer1D,
 			function: "invalid",
-			wantErr:  "Unable to set up metal function: Failed to find function 'invalid'",
+			wantErrs: []string{"Unable to set up metal function: Failed to find function 'invalid'"},
 		},
 		{
 			name:     "valid source, valid function name",
@@ -110,14 +110,20 @@ func Test_Function_NewFunction(t *testing.T) {
 			function, err := NewFunction(subtest.source, subtest.function)
 
 			// Test that the subtest's expected error and the actual error line up.
-			if subtest.wantErr == "" {
+			switch len(subtest.wantErrs) {
+			case 0:
 				require.Nil(t, err, "Unable to create metal function: %s", err)
 				require.True(t, function.Valid())
 				require.True(t, validId(function.id))
-			} else {
-				require.NotNil(t, err)
-				require.Equal(t, subtest.wantErr, err.Error())
+			case 1:
+				require.EqualError(t, err, subtest.wantErrs[0])
 				require.False(t, function.Valid())
+			default:
+				require.NotNil(t, err)
+				require.False(t, function.Valid())
+				for _, wantErr := range subtest.wantErrs {
+					require.ErrorContains(t, err, wantErr)
+				}
 			}
 		})
 	}
