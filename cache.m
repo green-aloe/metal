@@ -46,13 +46,15 @@ int cache_cache(void *item, const char **error) {
 // error is encountered and the item is not retrieved.
 void *cache_retrieve(int cacheId, const char **error) {
   if (cacheId < 1) {
-    logError(error, @"Invalid cache Id: %d", cacheId);
+    logError(error,
+             [NSString stringWithFormat:@"Invalid cache Id: %d", cacheId]);
     return nil;
   }
 
   @synchronized(cacheLock) {
     if (cacheId > numItems) {
-      logError(error, @"Invalid cache Id: %d", cacheId);
+      logError(error,
+               [NSString stringWithFormat:@"Invalid cache Id: %d", cacheId]);
       return nil;
     }
 
@@ -67,13 +69,15 @@ void *cache_retrieve(int cacheId, const char **error) {
 // Remove an item from the cache.
 _Bool cache_remove(int cacheId, const char **error) {
   if (cacheId < 1) {
-    logError(error, @"Invalid cache Id: %d", cacheId);
+    logError(error,
+             [NSString stringWithFormat:@"Invalid cache Id: %d", cacheId]);
     return false;
   }
 
   @synchronized(cacheLock) {
     if (cacheId > numItems) {
-      logError(error, @"Invalid cache Id: %d", cacheId);
+      logError(error,
+               [NSString stringWithFormat:@"Invalid cache Id: %d", cacheId]);
       return false;
     }
 
