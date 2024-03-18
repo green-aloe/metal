@@ -1,7 +1,7 @@
 // go:build darwin
 //  +build darwin
 
-#include "error.h"
+#include "Error.h"
 #import <Metal/Metal.h>
 
 void **cache = nil;

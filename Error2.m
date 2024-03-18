@@ -1,7 +1,7 @@
 // go:build darwin
 //  +build darwin
 
-#include "error.h"
+#include "Error.h"
 
 // Log an error to console and optionally set target to the error message if
 // target is not nil and doesn't already contain a message.

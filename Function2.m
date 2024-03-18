@@ -4,8 +4,8 @@
 // The process in this file largely follows the structure detailed in
 // https://developer.apple.com/documentation/metal/performing_calculations_on_a_gpu.
 
-#include "cache.h"
-#include "error.h"
+#include "Cache.h"
+#include "Error.h"
 #import <Metal/Metal.h>
 
 extern id<MTLDevice> device;
