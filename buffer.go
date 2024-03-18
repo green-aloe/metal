@@ -8,7 +8,7 @@ package metal
 
 /*
 #cgo LDFLAGS: -framework Metal -framework CoreGraphics -framework Foundation
-#include "metal.h"
+#include "Metal.h"
 */
 import "C"
 
