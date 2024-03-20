@@ -467,19 +467,17 @@ func Test_metalErrToError(t *testing.T) {
 			// If we don't have any error messages, then the error should be nil. Otherwise, we should
 			// have received the expected formatted error.
 			if subtest.metalErr == "" && subtest.goErr == "" {
-				require.Nil(t, err)
+				require.NoError(t, err)
 			} else {
-				require.NotNil(t, err)
-				require.Equal(t, subtest.want, err.Error())
+				require.EqualError(t, err, subtest.want)
 
 				// If we have both error messages, then we should be able to unwrap the error to get the
 				// underlying metal error. Otherwise, the error shouldn't be wrapped at all.
 				unwrapErr := errors.Unwrap(err)
 				if subtest.metalErr != "" && subtest.goErr != "" {
-					require.NotNil(t, unwrapErr)
-					require.Equal(t, subtest.metalErr, unwrapErr.Error())
+					require.EqualError(t, unwrapErr, subtest.metalErr)
 				} else {
-					require.Nil(t, unwrapErr)
+					require.NoError(t, unwrapErr)
 				}
 			}
 		})

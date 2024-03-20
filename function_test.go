@@ -112,18 +112,19 @@ func Test_Function_NewFunction(t *testing.T) {
 			// Test that the subtest's expected error and the actual error line up.
 			switch len(subtest.wantErrs) {
 			case 0:
-				require.Nil(t, err, "Unable to create metal function: %s", err)
+				require.NoError(t, err, "Unable to create metal function: %s", err)
 				require.True(t, function.Valid())
 				require.True(t, validId(function.id))
 			case 1:
 				require.EqualError(t, err, subtest.wantErrs[0])
 				require.False(t, function.Valid())
+				require.False(t, validId(function.id))
 			default:
-				require.NotNil(t, err)
-				require.False(t, function.Valid())
 				for _, wantErr := range subtest.wantErrs {
 					require.ErrorContains(t, err, wantErr)
 				}
+				require.False(t, function.Valid())
+				require.False(t, validId(function.id))
 			}
 		})
 	}
@@ -132,8 +133,8 @@ func Test_Function_NewFunction(t *testing.T) {
 	// by 1.
 	for i := 0; i < 100; i++ {
 		function, err := NewFunction(sourceTransfer1D, "transfer1D")
-		require.Nil(t, err)
-		require.True(t, validId(function.id))
+		require.NoError(t, err)
+		require.True(t, validId(function.id), "%d %d %v %d", nextMetalId, i, function, function.id)
 	}
 }
 
@@ -162,14 +163,14 @@ func Test_Function_String(t *testing.T) {
 
 	t.Run("invalid function", func(t *testing.T) {
 		function, err := NewFunction("", "")
-		require.NotNil(t, err)
+		require.EqualError(t, err, "Unable to set up metal function: Missing metal code")
 		require.False(t, function.Valid())
 		require.Equal(t, "", function.String())
 	})
 
 	t.Run("valid function", func(t *testing.T) {
 		function, err := NewFunction(sourceTransfer1D, "transfer1D")
-		require.Nil(t, err)
+		require.NoError(t, err)
 		require.True(t, function.Valid())
 		require.True(t, validId(function.id))
 		require.Equal(t, "transfer1D", function.String())
@@ -204,7 +205,7 @@ func Test_Function_NewFunction_threadSafe(t *testing.T) {
 			wg.Wait()
 
 			function, err := NewFunction(source, functionName)
-			require.Nil(t, err, "Unable to create metal function %s: %s", functionName, err)
+			require.NoError(t, err, "Unable to create metal function %s: %s", functionName, err)
 
 			dataCh <- data{
 				function: function,
@@ -246,25 +247,23 @@ func Test_Function_NewFunction_threadSafe(t *testing.T) {
 // Test_Function_Run_invalid tests that Function's Run method correctly handles invalid parameters.
 func Test_Function_Run_invalid(t *testing.T) {
 	function, err := NewFunction(sourceNoop, "noop")
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.True(t, validId(function.id))
 
 	t.Run("invalid (uninitialized) function", func(t *testing.T) {
 		var emptyFunction Function
 		err := emptyFunction.Run(RunParameters{})
-		require.NotNil(t, err)
-		require.Equal(t, "Unable to run metal function: Failed to retrieve function", err.Error())
+		require.EqualError(t, err, "Unable to run metal function: Failed to retrieve function: Invalid cache Id: 0")
 	})
 
 	t.Run("non-existent buffer", func(t *testing.T) {
 		err := function.Run(RunParameters{BufferIds: []BufferId{10000}})
-		require.NotNil(t, err)
-		require.Equal(t, "Unable to run metal function: Failed to retrieve buffer 1/1 using Id 10000", err.Error())
+		require.EqualError(t, err, "Unable to run metal function: Failed to retrieve buffer 1/1: Invalid cache Id: 10000")
 	})
 
 	t.Run("invalid grid", func(t *testing.T) {
 		err := function.Run(RunParameters{Grid: Grid{X: -1, Y: -1, Z: -1}})
-		require.Nil(t, err)
+		require.NoError(t, err)
 	})
 }
 
@@ -276,15 +275,15 @@ func Test_Function_Run_1D(t *testing.T) {
 
 			// Set up a metal function that simply transfers all inputs to the outputs.
 			function, err := NewFunction(sourceTransfer1D, "transfer1D")
-			require.Nil(t, err)
+			require.NoError(t, err)
 			require.True(t, validId(function.id))
 
 			// Set up input and output buffers.
 			inputId, input, err := NewBuffer[float32](width)
-			require.Nil(t, err)
+			require.NoError(t, err)
 			require.True(t, validId(inputId))
 			outputId, output, err := NewBuffer[float32](width)
-			require.Nil(t, err)
+			require.NoError(t, err)
 			require.True(t, validId(outputId))
 
 			// Set some initial values for the input.
@@ -300,7 +299,7 @@ func Test_Function_Run_1D(t *testing.T) {
 				},
 				BufferIds: []BufferId{inputId, outputId},
 			})
-			require.Nil(t, err)
+			require.NoError(t, err)
 			require.Equal(t, input, output)
 
 			// Set some different values in the input and run the function again.
@@ -314,7 +313,7 @@ func Test_Function_Run_1D(t *testing.T) {
 				},
 				BufferIds: []BufferId{inputId, outputId},
 			})
-			require.Nil(t, err)
+			require.NoError(t, err)
 			require.Equal(t, input, output)
 		})
 	}
@@ -330,15 +329,15 @@ func Test_Function_Run_2D(t *testing.T) {
 
 			// Set up a metal function that simply transfers all inputs to the outputs and adds 1.
 			function, err := NewFunction(sourceTransfer2D, "transfer2D")
-			require.Nil(t, err)
+			require.NoError(t, err)
 			require.True(t, validId(function.id))
 
 			// Set up input and output buffers.
 			inputId, i, err := NewBuffer[float32](width * height)
-			require.Nil(t, err)
+			require.NoError(t, err)
 			require.True(t, validId(inputId))
 			outputId, o, err := NewBuffer[float32](width * height)
-			require.Nil(t, err)
+			require.NoError(t, err)
 			require.True(t, validId(outputId))
 
 			input := Fold(i, width)
@@ -370,7 +369,7 @@ func Test_Function_Run_2D(t *testing.T) {
 				Inputs:    []float32{1},
 				BufferIds: []BufferId{inputId, outputId},
 			})
-			require.Nil(t, err)
+			require.NoError(t, err)
 			require.Equal(t, want, output)
 
 			// Set some different values in the input and run the function again.
@@ -389,7 +388,7 @@ func Test_Function_Run_2D(t *testing.T) {
 				Inputs:    []float32{1},
 				BufferIds: []BufferId{inputId, outputId},
 			})
-			require.Nil(t, err)
+			require.NoError(t, err)
 			require.Equal(t, want, output)
 		})
 	}
@@ -406,15 +405,15 @@ func Test_Function_Run_3D(t *testing.T) {
 
 			// Set up a metal function that simply transfers all inputs to the outputs.
 			function, err := NewFunction(sourceTransfer3D, "transfer3D")
-			require.Nil(t, err)
+			require.NoError(t, err)
 			require.True(t, validId(function.id))
 
 			// Set up input and output buffers.
 			inputId, i, err := NewBuffer[float32](width * height * depth)
-			require.Nil(t, err)
+			require.NoError(t, err)
 			require.True(t, validId(inputId))
 			outputId, o, err := NewBuffer[float32](width * height * depth)
-			require.Nil(t, err)
+			require.NoError(t, err)
 			require.True(t, validId(outputId))
 
 			input := Fold(Fold(i, width*height), width)
@@ -439,7 +438,7 @@ func Test_Function_Run_3D(t *testing.T) {
 				},
 				BufferIds: []BufferId{inputId, outputId},
 			})
-			require.Nil(t, err)
+			require.NoError(t, err)
 			require.Equal(t, input, output)
 
 			// Set some different values in the input and run the function again.
@@ -459,7 +458,7 @@ func Test_Function_Run_3D(t *testing.T) {
 				},
 				BufferIds: []BufferId{inputId, outputId},
 			})
-			require.Nil(t, err)
+			require.NoError(t, err)
 			require.Equal(t, input, output)
 		})
 	}
@@ -477,7 +476,7 @@ func Test_Function_Run_threadSafe(t *testing.T) {
 
 	// Set up the metal function.
 	function, err := NewFunction(sourceTransfer1D, "transfer1D")
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.True(t, validId(function.id))
 
 	// We're going to use a wait group to block each goroutine after it's prepared until they're all
@@ -495,10 +494,10 @@ func Test_Function_Run_threadSafe(t *testing.T) {
 	for iteration := 1; iteration <= numIter; iteration++ {
 		// Create the buffers for this iteration.
 		inputId, input, err := NewBuffer[float32](width)
-		require.Nil(t, err)
+		require.NoError(t, err)
 		require.True(t, validId(inputId))
 		outputId, output, err := NewBuffer[float32](width)
-		require.Nil(t, err)
+		require.NoError(t, err)
 		require.True(t, validId(outputId))
 
 		// Set values in the input so we can test that the output was operated on correctly.
@@ -531,7 +530,7 @@ func Test_Function_Run_threadSafe(t *testing.T) {
 	// Test that each output received the correct values.
 	for iteration := 1; iteration <= numIter; iteration++ {
 		data := <-dataCh
-		require.Nil(t, err, "Unable to run metal function (iteration %d): %s", data.iteration, err)
+		require.NoError(t, err, "Unable to run metal function (iteration %d): %s", data.iteration, err)
 
 		for i := range data.output {
 			require.Equal(t, float32(i*data.iteration), data.output[i], "Iteration %d failed on item %d", data.iteration, i+1)
@@ -569,15 +568,15 @@ func testType[T BufferType](t *testing.T, metalType string, wantFail bool, sette
 
 		// Set up a metal function.
 		function, err := NewFunction(source, "transferType")
-		require.Nil(t, err)
+		require.NoError(t, err)
 		require.True(t, validId(function.id))
 
 		// Create the input and output buffers.
 		inputId, input, err := NewBuffer[T](100)
-		require.Nil(t, err)
+		require.NoError(t, err)
 		require.True(t, validId(inputId))
 		outputId, output, err := NewBuffer[T](100)
-		require.Nil(t, err)
+		require.NoError(t, err)
 		require.True(t, validId(outputId))
 
 		// Set the inputs.
@@ -592,7 +591,7 @@ func testType[T BufferType](t *testing.T, metalType string, wantFail bool, sette
 			},
 			BufferIds: []BufferId{inputId, outputId},
 		})
-		require.Nil(t, err)
+		require.NoError(t, err)
 
 		// Test that the inputs were either correctly or incorrectly transferred over to the
 		// outputs, depending on the test scenario.
