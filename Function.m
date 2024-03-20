@@ -144,11 +144,9 @@ _Bool function_run(int functionId, int width, int height, int depth,
     // Retrieve the buffer for this Id.
     id<MTLBuffer> buffer = cache_retrieve(bufferIds[i], error);
     if (buffer == nil) {
-      logError(
-          error,
-          [NSString
-              stringWithFormat:@"Failed to retrieve buffer %d/%d using Id %d",
-                               i + 1, numBufferIds, bufferIds[i]]);
+      logError(error,
+               [NSString stringWithFormat:@"Failed to retrieve buffer %d/%d",
+                                          i + 1, numBufferIds]);
       return false;
     }
 
