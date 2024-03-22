@@ -1,9 +1,8 @@
 // go:build darwin
 //  +build darwin
 
-#include "Metal.h"
 #include "Cache.h"
-#include "Error.h"
+#import <Metal/Metal.h>
 
 id<MTLDevice> device;
 
