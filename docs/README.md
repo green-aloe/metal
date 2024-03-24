@@ -61,3 +61,8 @@ as sequenced in the metal function.
 For the full documentation and example usage, see https://pkg.go.dev/github.com%2Fgreen-aloe%2Fmetal?GOOS=darwin.
 
 # TODO
+* Add objective-c tests (hopefully with the XCTest framework)
+* Rework the folding process. It can be a bit hard to visualize and could be easier to use.
+* Performance: profile, find leaks, tighten everything up
+* Better align objective-c code with Apple standards
+* We can't import the Metal library directly into go code, but see if we can translate things better (like an NSError into a go error)
