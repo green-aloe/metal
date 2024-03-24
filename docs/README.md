@@ -2,6 +2,7 @@
 
 # Overview
 
+## Metal (Apple)
 Apple's Metal API
 is a unified framework
 for performing various types of task
@@ -24,6 +25,7 @@ and best practices
 for writing metal functions using them,
 see Apple's documentation [on threads and threadgroups](https://developer.apple.com/documentation/metal/compute_passes/creating_threads_and_threadgroups#2928931).)
 
+## `metal` (green-aloe)
 This library
 leverages Apple's Metal API
 to run computational processes
@@ -53,6 +55,8 @@ This streams
 the arguments and the data in the buffers
 through the computational operation(s)
 as sequenced in the metal function.
+
+# Documentation
 
 For the full documentation, see https://pkg.go.dev/github.com%2Fgreen-aloe%2Fmetal?GOOS=darwin.
 
