@@ -54,3 +54,5 @@ through the computational operation(s)
 as sequenced in the metal function.
 
 For the full documentation, see https://pkg.go.dev/github.com%2Fgreen-aloe%2Fmetal?GOOS=darwin.
+
+# TODO
