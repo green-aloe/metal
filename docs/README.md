@@ -58,6 +58,6 @@ as sequenced in the metal function.
 
 # Documentation
 
-For the full documentation, see https://pkg.go.dev/github.com%2Fgreen-aloe%2Fmetal?GOOS=darwin.
+For the full documentation and example usage, see https://pkg.go.dev/github.com%2Fgreen-aloe%2Fmetal?GOOS=darwin.
 
 # TODO
