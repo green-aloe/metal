@@ -3,11 +3,8 @@
 
 package metal
 
-// frameworks not included:
-// Cocoa
-
 /*
-#cgo LDFLAGS: -framework Metal -framework CoreGraphics -framework Foundation
+#cgo LDFLAGS: -framework Cocoa -framework Metal
 #include "Metal.h"
 */
 import "C"
