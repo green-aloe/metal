@@ -1,5 +1,5 @@
 /*
-Package `metal`
+Package metal
 is a library
 for running computational tasks (GPGPU)
 on [Apple silicon]
@@ -8,12 +8,13 @@ through Apple's [Metal API].
 # Overview
 
 ## Metal (Apple)
+
 Apple's Metal API
 is a unified framework
 for performing various types of task
 on Apple silicon GPUs.
 It offers low-level, direct, detailed access
-to the hardware (hence, _metal_ )
+to the hardware (hence, "metal" )
 for fast and efficient processing.
 
 The processing centers around pipelines,
@@ -30,7 +31,8 @@ and best practices
 for writing metal functions using them,
 see Apple's documentation [on threads and threadgroups].)
 
-## `metal` (green-aloe)
+## metal (green-aloe)
+
 This library
 leverages Apple's Metal API
 to run computational processes
