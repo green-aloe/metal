@@ -7,7 +7,7 @@ through Apple's [Metal API].
 
 # Overview
 
-## Metal (Apple)
+*Metal (Apple)*
 
 Apple's Metal API
 is a unified framework
@@ -31,7 +31,7 @@ and best practices
 for writing metal functions using them,
 see Apple's documentation [on threads and threadgroups].)
 
-## metal (green-aloe)
+*metal (green-aloe)*
 
 This library
 leverages Apple's Metal API
