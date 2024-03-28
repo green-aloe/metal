@@ -5,9 +5,7 @@ for running computational tasks (GPGPU)
 on [Apple silicon]
 through Apple's [Metal API].
 
-# Overview
-
-*Metal (Apple)*
+# Metal (Apple API)
 
 Apple's Metal API
 is a unified framework
@@ -31,7 +29,7 @@ and best practices
 for writing metal functions using them,
 see Apple's documentation [on threads and threadgroups].)
 
-*metal (green-aloe)*
+# metal (go package)
 
 This library
 leverages Apple's Metal API
