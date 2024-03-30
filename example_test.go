@@ -7,7 +7,7 @@ import (
 	"github.com/green-aloe/metal"
 )
 
-func ExampleNewBuffer_oneDimension() {
+func ExampleNewBuffer_1Dimension() {
 	// Create a 1-dimensional buffer with a width of 100 items. This will allocate 400 bytes (100
 	// items * sizeof(float32)).
 	width := 100
@@ -19,11 +19,11 @@ func ExampleNewBuffer_oneDimension() {
 	// bufferId is used to reference the buffer when running a metal function later.
 	_ = bufferId
 
-	// buffer is used to load/retrieve data from the pipeline.
+	// buffer is used to load/retrieve data into/out of the pipeline.
 	_ = buffer
 }
 
-func ExampleNewBuffer_twoDimensions() {
+func ExampleNewBuffer_2Dimensions() {
 	// Create a 1-dimensional buffer with enough items to eventually have a 2-dimensional buffer
 	// with a width of 100 items and a height of 20 items. This will allocate 8,000 bytes (100 * 20
 	// * sizeof(float32)).
@@ -39,11 +39,11 @@ func ExampleNewBuffer_twoDimensions() {
 	// bufferId is used to reference the buffer when running a metal function later.
 	_ = bufferId
 
-	// buffer2D is used to load/retrieve data from the pipeline.
+	// buffer2D is used to load/retrieve data into/out of the pipeline.
 	_ = buffer2D
 }
 
-func ExampleNewBuffer_threeDimensions() {
+func ExampleNewBuffer_3Dimensions() {
 	// Create a 1-dimensional buffer with enough items to eventually have a 3-dimensional buffer
 	// with a width of 100 items, a height of 20 items, and a depth of 2 items. This will allocate
 	// 16,000 bytes (100 * 20 * 2 * sizeof(float32)).
@@ -62,7 +62,7 @@ func ExampleNewBuffer_threeDimensions() {
 	// bufferId is used to reference the buffer when running a metal function later.
 	_ = bufferId
 
-	// buffer3D is used to load/retrieve data from the pipeline.
+	// buffer3D is used to load/retrieve data into/out of the pipeline.
 	_ = buffer3D
 }
 
