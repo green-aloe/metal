@@ -88,6 +88,172 @@ func ExampleNewFunction() {
 	_ = function
 }
 
+func ExampleFunction_Run_1Dimension() {
+	const (
+		source = `
+		#include <metal_stdlib>
+
+		using namespace metal;
+
+		kernel void transfer1D(constant float *input, device float *output, uint pos [[thread_position_in_grid]]) {
+			int index = pos;
+			output[index] = input[index];
+		}
+	`
+		width = 3
+	)
+
+	function, err := metal.NewFunction(source, "transfer1D")
+	if err != nil {
+		log.Fatalf("Unable to create metal function: %v", err)
+	}
+
+	inputId, input, err := metal.NewBuffer[float32](width)
+	if err != nil {
+		log.Fatalf("Unable to create metal buffer: %v", err)
+	}
+
+	outputId, output, err := metal.NewBuffer[float32](width)
+	if err != nil {
+		log.Fatalf("Unable to create metal buffer: %v", err)
+	}
+
+	for i := range input {
+		input[i] = float32(i + 1)
+	}
+
+	if err := function.Run(metal.RunParameters{
+		Grid: metal.Grid{
+			X: width,
+		},
+		BufferIds: []metal.BufferId{inputId, outputId},
+	}); err != nil {
+		log.Fatalf("Unable to run metal function: %v", err)
+	}
+
+	fmt.Println(input)
+	fmt.Println(output)
+	// Output:
+	// [1 2 3]
+	// [1 2 3]
+}
+
+func ExampleFunction_Run_2Dimensions() {
+	const (
+		source = `
+		#include <metal_stdlib>
+
+		using namespace metal;
+
+		kernel void transfer2D(constant float *input, device float *output, uint2 pos [[thread_position_in_grid]], uint2 grid_size [[threads_per_grid]]) {
+			int index = (pos.x * grid_size.y) + pos.y;
+			output[index] = input[index];
+		}
+	`
+		width  = 3
+		height = 3
+	)
+
+	function, err := metal.NewFunction(source, "transfer2D")
+	if err != nil {
+		log.Fatalf("Unable to create metal function: %v", err)
+	}
+
+	inputId, i, err := metal.NewBuffer[float32](width * height)
+	if err != nil {
+		log.Fatalf("Unable to create metal buffer: %v", err)
+	}
+	input := metal.Fold(i, width)
+
+	outputId, o, err := metal.NewBuffer[float32](width * height)
+	if err != nil {
+		log.Fatalf("Unable to create metal buffer: %v", err)
+	}
+	output := metal.Fold(o, width)
+
+	for i := range input {
+		for j := range input[i] {
+			input[i][j] = float32(i*height + j + 1)
+		}
+	}
+
+	if err := function.Run(metal.RunParameters{
+		Grid: metal.Grid{
+			X: width,
+			Y: height,
+		},
+		BufferIds: []metal.BufferId{inputId, outputId},
+	}); err != nil {
+		log.Fatalf("Unable to run metal function: %v", err)
+	}
+
+	fmt.Println(input)
+	fmt.Println(output)
+	// Output:
+	// [[1 2 3] [4 5 6] [7 8 9]]
+	// [[1 2 3] [4 5 6] [7 8 9]]
+}
+
+func ExampleFunction_Run_3Dimensions() {
+	const (
+		source = `
+		#include <metal_stdlib>
+
+		using namespace metal;
+
+		kernel void transfer3D(constant float *input, device float *result, uint3 pos [[thread_position_in_grid]], uint3 grid_size [[threads_per_grid]]) {
+			int index = (pos.x * grid_size.y * grid_size.z) + (pos.y * grid_size.z) + pos.z;
+			result[index] = input[index];
+		}
+	`
+		width  = 3
+		height = 3
+		depth  = 3
+	)
+
+	function, err := metal.NewFunction(source, "transfer3D")
+	if err != nil {
+		log.Fatalf("Unable to create metal function: %v", err)
+	}
+
+	inputId, i, err := metal.NewBuffer[float32](width * height * depth)
+	if err != nil {
+		log.Fatalf("Unable to create metal buffer: %v", err)
+	}
+	input := metal.Fold(metal.Fold(i, width*height), width)
+
+	outputId, o, err := metal.NewBuffer[float32](width * height * depth)
+	if err != nil {
+		log.Fatalf("Unable to create metal buffer: %v", err)
+	}
+	output := metal.Fold(metal.Fold(o, width*height), width)
+
+	for i := range input {
+		for j := range input[i] {
+			for k := range input[i][j] {
+				input[i][j][k] = float32(i*height*depth + j*depth + k + 1)
+			}
+		}
+	}
+
+	if err := function.Run(metal.RunParameters{
+		Grid: metal.Grid{
+			X: width,
+			Y: height,
+			Z: depth,
+		},
+		BufferIds: []metal.BufferId{inputId, outputId},
+	}); err != nil {
+		log.Fatalf("Unable to run metal function: %v", err)
+	}
+
+	fmt.Println(input)
+	fmt.Println(output)
+	// Output:
+	// [[[1 2 3] [4 5 6] [7 8 9]] [[10 11 12] [13 14 15] [16 17 18]] [[19 20 21] [22 23 24] [25 26 27]]]
+	// [[[1 2 3] [4 5 6] [7 8 9]] [[10 11 12] [13 14 15] [16 17 18]] [[19 20 21] [22 23 24] [25 26 27]]]
+}
+
 func Example() {
 	width := 3
 	height := 3
