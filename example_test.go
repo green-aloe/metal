@@ -88,7 +88,7 @@ func ExampleNewFunction() {
 	_ = function
 }
 
-func ExampleFunction_Run_1Dimension() {
+func ExampleFunction_Run_oneDimension() {
 	const (
 		source = `
 		#include <metal_stdlib>
@@ -138,7 +138,7 @@ func ExampleFunction_Run_1Dimension() {
 	// [1 2 3]
 }
 
-func ExampleFunction_Run_2Dimensions() {
+func ExampleFunction_Run_twoDimensions() {
 	const (
 		source = `
 		#include <metal_stdlib>
@@ -194,7 +194,7 @@ func ExampleFunction_Run_2Dimensions() {
 	// [[1 2 3] [4 5 6] [7 8 9]]
 }
 
-func ExampleFunction_Run_3Dimensions() {
+func ExampleFunction_Run_threeDimensions() {
 	const (
 		source = `
 		#include <metal_stdlib>
