@@ -97,8 +97,8 @@ to Metal types:
     for running computations (as opposed to renderings).
     This means ths metal functions
     must be kernel functions,
-    i.e. prefixed with `kernel`
-    and returning `void`.
+    i.e. prefixed with "kernel"
+    and returning "void".
 
 # Resources
 
