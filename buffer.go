@@ -1,10 +1,9 @@
 //go:build darwin
-// +build darwin
 
 package metal
 
 /*
-#cgo LDFLAGS: -framework Cocoa -framework Metal
+#cgo LDFLAGS: -framework Metal -framework Foundation
 #include "Metal.h"
 */
 import "C"
@@ -16,7 +15,7 @@ import (
 )
 
 var (
-	ErrInvalidBufferId = errors.New("Invalid buffer Id")
+	ErrInvalidBufferId = errors.New("invalid buffer id")
 )
 
 // A BufferId references a specific metal buffer created with NewBuffer*.
@@ -29,8 +28,14 @@ func (id BufferId) Valid() bool {
 }
 
 // A BufferType is a type that can be used to create a new metal buffer.
+//
+// Only types up to 32 bits wide are allowed. 64-bit types (int64, uint64, float64) are deliberately
+// excluded: the Metal Shading Language has no portable 64-bit scalar that a kernel could declare to
+// read such a buffer back as a typed array, so allowing them would only let callers allocate memory
+// no shader could meaningfully consume. Use float32/int32/uint32 (or narrower) and, if you need more
+// range, split the value across multiple elements in the shader.
 type BufferType interface {
-	~int8 | ~int16 | ~int32 | ~int64 | ~uint8 | ~uint16 | ~uint32 | ~uint64 | ~float32 | ~float64
+	~int8 | ~int16 | ~int32 | ~uint8 | ~uint16 | ~uint32 | ~float32
 }
 
 // NewBuffer allocates a 1-dimensional block of memory that is accessible to both the CPU and GPU.
@@ -46,33 +51,34 @@ type BufferType interface {
 // one-dimensional slice into a two-dimensional slice, use Fold(buffer, width). Or to go from one
 // dimensions to three, use Fold(Fold(buffer, width*height), width).
 func NewBuffer[T BufferType](width int) (BufferId, []T, error) {
+	if err := Available(); err != nil {
+		return 0, nil, err
+	}
+
 	if width < 1 {
-		return 0, nil, errors.New("Invalid width")
+		return 0, nil, errors.New("invalid width")
 	}
 
+	// Check the byte count against the C-side limit (a signed 32-bit int) before multiplying, so the
+	// width*size product can never silently overflow Go's int on the way to the bounds check.
+	if width > math.MaxInt32/sizeof[T]() {
+		return 0, nil, errors.New("exceeded maximum number of bytes")
+	}
 	numBytes := width * sizeof[T]()
-	if numBytes > math.MaxInt32 || numBytes < 0 {
-		return 0, nil, errors.New("Exceeded maximum number of bytes")
-	}
 
-	// Set up some space to hold a possible error message.
-	err := C.CString("")
-	defer C.free(unsafe.Pointer(err))
+	// The C side may strdup an error message into err on failure; we must free it.
+	var err *C.char
+	defer func() { freeCString(err) }()
 
-	// Allocate memory for the new buffer.
-	bufferId := C.buffer_new(C.int(numBytes), &err)
+	// Allocate memory for the new buffer and get its contents pointer in one call.
+	var contents unsafe.Pointer
+	bufferId := C.buffer_new(C.int(numBytes), &contents, &err)
 	if int(bufferId) == 0 {
-		return 0, nil, metalErrToError(err, "Unable to create buffer")
-	}
-
-	// Retrieve a pointer to the beginning of the new memory using the buffer's Id.
-	newBuffer := C.buffer_retrieve(bufferId, &err)
-	if newBuffer == nil {
-		return 0, nil, metalErrToError(err, "Unable to retrieve buffer")
+		return 0, nil, metalErrToError(err, "unable to create buffer", ErrInvalidBufferId)
 	}
 
 	// Wrap the buffer in a go slice.
-	slice := unsafe.Slice((*T)(newBuffer), width)
+	slice := unsafe.Slice((*T)(contents), width)
 
 	return BufferId(bufferId), slice, nil
 }
@@ -90,17 +96,23 @@ func NewBufferWith[T BufferType](data []T) (BufferId, []T, error) {
 }
 
 // Close releases the buffer from the GPU memory. The buffer Id becomes invalid after this call.
+//
+// Close has a pointer receiver because it zeroes the id in place to mark it invalid, so it must be
+// called on an addressable BufferId (a variable, not a literal or map element). For example,
+// bufferId.Close() works when bufferId is a variable, but BufferId(7).Close() does not compile.
+// This differs from Function.Close, which already operates on a *Function and so reads naturally on
+// a function handle.
 func (id *BufferId) Close() error {
 	if id == nil || !id.Valid() {
 		return ErrInvalidBufferId
 	}
 
-	// Set up some space to hold a possible error message.
-	err := C.CString("")
-	defer C.free(unsafe.Pointer(err))
+	// The C side may strdup an error message into err on failure; we must free it.
+	var err *C.char
+	defer func() { freeCString(err) }()
 
 	if !C.buffer_close(C.int(*id), &err) {
-		return metalErrToError(err, "Unable to free buffer")
+		return metalErrToError(err, "unable to free buffer", ErrInvalidBufferId)
 	}
 
 	// Clear the buffer Id to mark that it's no longer valid.

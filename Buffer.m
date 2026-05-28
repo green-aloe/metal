@@ -1,62 +1,97 @@
-// go:build darwin
-//  +build darwin
-
-#include "Cache.h"
+#include "BufferCache.h"
 #include "Error.h"
+#include "Metal.h"
+#include "MetalInternal.h"
+#include <limits.h>
 #import <Metal/Metal.h>
 
-extern id<MTLDevice> device;
+static NSMutableDictionary *bufferCache = nil;
+static int nextBufferId = 1;
+static NSLock *bufferLock = nil;
 
-// Allocate a block of memory accessible to both the CPU and GPU that is large
-// enough to hold the number of bytes specified. The buffer is cached and can be
-// retrieved with the buffer Id that's returned. A buffer can be supplied as an
-// argument to the metal function when the function is run. If any error is
-// encountered creating the buffer, this returns 0 and sets an error message in
-// error.
-int buffer_new(int size, const char **error) {
-  id<MTLBuffer> buffer =
-      [device newBufferWithLength:(size) options:MTLResourceStorageModeShared];
+// Initialize the buffer cache. This should be called only once.
+void buffer_cache_init(void) {
+  bufferCache = [[NSMutableDictionary alloc] init];
+  bufferLock = [[NSLock alloc] init];
+}
+
+// Store a buffer in the cache and return its ID, or 0 on error.
+int buffer_cache_store(id<MTLBuffer> buffer, const char **error) {
   if (buffer == nil) {
-    logError(
-        error,
-        [NSString
-            stringWithFormat:@"Failed to create buffer with %d bytes", size]);
+    logError(error, @"missing buffer to store");
     return 0;
   }
 
-  // Add the buffer to the buffer cache and return its unique Id.
-  int bufferId = cache_cache(buffer, error);
-  if (bufferId == 0) {
-    logError(error, @"Failed to cache buffer");
+  int bufferId = 0;
+  [bufferLock lock];
+  if (nextBufferId == INT_MAX) {
+    [bufferLock unlock];
+    logError(error, @"buffer id space exhausted");
     return 0;
   }
+  bufferId = nextBufferId++;
+  bufferCache[@(bufferId)] = buffer;
+  [bufferLock unlock];
 
   return bufferId;
 }
 
-// Retrieve a buffer from the cache. If any error is encountered retrieving
-// the buffer, this returns nil and sets an error message in error.
-void *buffer_retrieve(int bufferId, const char **error) {
-  id<MTLBuffer> buffer = cache_retrieve(bufferId, error);
+// Retrieve a buffer from the cache by ID, or nil if not found.
+id<MTLBuffer> buffer_cache_retrieve(int bufferId) {
+  [bufferLock lock];
+  id<MTLBuffer> buffer = bufferCache[@(bufferId)];
+  [bufferLock unlock];
+
+  return buffer;
+}
+
+// Remove a buffer from the cache by ID and return it, or nil on error.
+id<MTLBuffer> buffer_cache_remove(int bufferId, const char **error) {
+  [bufferLock lock];
+  id<MTLBuffer> buffer = bufferCache[@(bufferId)];
   if (buffer == nil) {
-    logError(error, @"Failed to retrieve buffer");
+    [bufferLock unlock];
+    logError(error, [NSString stringWithFormat:@"invalid buffer id: %d", bufferId]);
     return nil;
   }
+  [bufferCache removeObjectForKey:@(bufferId)];
+  [bufferLock unlock];
 
-  return [buffer contents];
+  return buffer;
+}
+
+// Allocate a block of shared CPU/GPU memory large enough to hold the specified
+// number of bytes. Writes the buffer's ID to the return value and its contents
+// pointer to *contents. Returns 0 and sets an error on failure.
+int buffer_new(int size, void **contents, const char **error) {
+  id<MTLBuffer> buffer =
+      [metal_device() newBufferWithLength:size options:MTLResourceStorageModeShared];
+  if (buffer == nil) {
+    logError(error, [NSString stringWithFormat:@"failed to create buffer with %d bytes", size]);
+    return 0;
+  }
+
+  int bufferId = buffer_cache_store(buffer, error);
+  if (bufferId == 0) {
+    // buffer_cache_store has already populated *error with a specific message.
+    return 0;
+  }
+
+  *contents = [buffer contents];
+  return bufferId;
 }
 
 // Free a cached buffer. If any error is encountered relinquishing the memory,
 // this sets an error message in error.
+//
+// The actual deallocation happens via ARC once the last strong reference
+// (the cache entry, just removed) is gone. Any GPU work already in flight
+// retains its own reference and finishes safely.
 _Bool buffer_close(int bufferId, const char **error) {
-  id<MTLBuffer> buffer = cache_retrieve(bufferId, error);
+  id<MTLBuffer> buffer = buffer_cache_remove(bufferId, error);
   if (buffer == nil) {
-    logError(error, @"Failed to retrieve buffer");
     return false;
   }
 
-  [buffer setPurgeableState:MTLPurgeableStateEmpty];
-  [buffer release];
-
-  return cache_remove(bufferId, error);
+  return true;
 }

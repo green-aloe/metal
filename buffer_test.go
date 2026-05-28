@@ -1,5 +1,4 @@
 //go:build darwin
-// +build darwin
 
 package metal
 
@@ -18,7 +17,7 @@ import (
 // Test_Globals tests the global variables and constants for buffers.
 func Test_Globals(t *testing.T) {
 	t.Run("vars", func(t *testing.T) {
-		require.EqualError(t, ErrInvalidBufferId, "Invalid buffer Id")
+		require.EqualError(t, ErrInvalidBufferId, "invalid buffer id")
 	})
 }
 
@@ -41,21 +40,21 @@ func Test_BufferId_Valid(t *testing.T) {
 func Test_NewBuffer_invalid(t *testing.T) {
 	t.Run("no width", func(t *testing.T) {
 		bufferId, buffer, err := NewBuffer[int32](0)
-		require.EqualError(t, err, "Invalid width")
+		require.EqualError(t, err, "invalid width")
 		require.Equal(t, BufferId(0), bufferId)
 		require.Nil(t, buffer)
 	})
 
 	t.Run("negative width", func(t *testing.T) {
 		bufferId, buffer, err := NewBuffer[float32](-1)
-		require.EqualError(t, err, "Invalid width")
+		require.EqualError(t, err, "invalid width")
 		require.Equal(t, BufferId(0), bufferId)
 		require.Nil(t, buffer)
 	})
 
 	t.Run("too many bytes", func(t *testing.T) {
 		bufferId, buffer, err := NewBuffer[float32](math.MaxInt32 + 1)
-		require.EqualError(t, err, "Exceeded maximum number of bytes")
+		require.EqualError(t, err, "exceeded maximum number of bytes")
 		require.Equal(t, BufferId(0), bufferId)
 		require.Nil(t, buffer)
 	})
@@ -70,13 +69,10 @@ func Test_NewBuffer(t *testing.T) {
 	testNewBuffer(t, func(i int) uint8 { return uint8(i) })
 	testNewBuffer(t, func(i int) uint16 { return uint16(i) })
 	testNewBuffer(t, func(i int) uint32 { return uint32(i) })
-	testNewBuffer(t, func(i int) uint64 { return uint64(i) })
 	testNewBuffer(t, func(i int) int8 { return int8(-i) })
 	testNewBuffer(t, func(i int) int16 { return int16(-i) })
 	testNewBuffer(t, func(i int) int32 { return int32(-i) })
-	testNewBuffer(t, func(i int) int64 { return int64(-i) })
 	testNewBuffer(t, func(i int) float32 { return float32(i) * 1.1 })
-	testNewBuffer(t, func(i int) float64 { return float64(i) * 1.1 })
 
 	// Test custom types that satisfy the BufferType constraint.
 	type MyByte byte
@@ -89,25 +85,19 @@ func Test_NewBuffer(t *testing.T) {
 	testNewBuffer(t, func(i int) MyUint16 { return MyUint16(i) })
 	type MyUint32 uint32
 	testNewBuffer(t, func(i int) MyUint32 { return MyUint32(i) })
-	type MyUint64 uint64
-	testNewBuffer(t, func(i int) MyUint64 { return MyUint64(i) })
 	type MyInt8 int8
 	testNewBuffer(t, func(i int) MyInt8 { return MyInt8(-i) })
 	type MyInt16 int16
 	testNewBuffer(t, func(i int) MyInt16 { return MyInt16(-i) })
 	type MyInt32 int32
 	testNewBuffer(t, func(i int) MyInt32 { return MyInt32(-i) })
-	type MyInt64 int64
-	testNewBuffer(t, func(i int) MyInt64 { return MyInt64(-i) })
 	type MyFloat32 float32
 	testNewBuffer(t, func(i int) MyFloat32 { return MyFloat32(i) * 1.1 })
-	type MyFloat64 float64
-	testNewBuffer(t, func(i int) MyFloat64 { return MyFloat64(i) * 1.1 })
 
 	t.Run("max size", func(t *testing.T) {
 		bufferId, buffer, err := NewBuffer[byte](math.MaxInt32)
 		require.NoError(t, err, "Unable to create metal buffer: %s", err)
-		require.True(t, validId(bufferId))
+		require.True(t, validBufferId(bufferId))
 		require.Len(t, buffer, math.MaxInt32)
 		require.Equal(t, cap(buffer), math.MaxInt32)
 	})
@@ -122,7 +112,7 @@ func testNewBuffer[T BufferType](t *testing.T, converter func(int) T) {
 
 		bufferId, buffer, err := NewBuffer[T](width)
 		require.NoError(t, err, "Unable to create metal buffer: %s", err)
-		require.True(t, validId(bufferId))
+		require.True(t, validBufferId(bufferId))
 		require.Len(t, buffer, width)
 		require.Equal(t, cap(buffer), width)
 
@@ -150,7 +140,7 @@ func testNewBuffer[T BufferType](t *testing.T, converter func(int) T) {
 
 		bufferId, buffer1D, err := NewBuffer[T](width * height)
 		require.NoError(t, err, "Unable to create metal buffer: %s", err)
-		require.True(t, validId(bufferId))
+		require.True(t, validBufferId(bufferId))
 		require.Len(t, buffer1D, width*height)
 		require.Equal(t, width*height, cap(buffer1D))
 
@@ -193,7 +183,7 @@ func testNewBuffer[T BufferType](t *testing.T, converter func(int) T) {
 
 		bufferId, buffer1D, err := NewBuffer[T](width * height * depth)
 		require.NoError(t, err, "Unable to create metal buffer: %s", err)
-		require.True(t, validId(bufferId))
+		require.True(t, validBufferId(bufferId))
 		require.Equal(t, width*height*depth, len(buffer1D))
 		require.Equal(t, width*height*depth, cap(buffer1D))
 
@@ -280,7 +270,7 @@ func Test_NewBuffer_threadSafe(t *testing.T) {
 		require.False(t, ok)
 		idMap[bufferId] = struct{}{}
 
-		addId()
+		addBufferId()
 	}
 
 	// Test that we received every Id in the sequence.
@@ -291,19 +281,26 @@ func Test_NewBuffer_threadSafe(t *testing.T) {
 	sort.Slice(idList, func(i, j int) bool { return idList[i] < idList[j] })
 	require.Len(t, idList, numIter)
 	for i := 0; i < numIter; i++ {
-		require.Equal(t, nextMetalId-numIter+i, int(idList[i]))
+		require.Equal(t, nextBufferId-numIter+i, int(idList[i]))
 	}
 }
 
 // Test_NewBufferWith tests that NewBufferWith creates a new metal buffer with the expected
 // underlying data.
 func Test_NewBufferWith(t *testing.T) {
+	t.Run("empty slice", func(t *testing.T) {
+		bufferId, buffer, err := NewBufferWith([]int32{})
+		require.EqualError(t, err, "invalid width")
+		require.Equal(t, BufferId(0), bufferId)
+		require.Nil(t, buffer)
+	})
+
 	t.Run("int32", func(t *testing.T) {
 		input := []int32{1, 2, 3, 4, 5}
 		want := []int32{1, 2, 3, 4, 5}
 		bufferId, buffer, err := NewBufferWith(input)
 		require.NoError(t, err)
-		require.True(t, validId(bufferId))
+		require.True(t, validBufferId(bufferId))
 		require.Len(t, buffer, len(want))
 		require.Equal(t, cap(want), cap(buffer))
 		require.Equal(t, want, buffer)
@@ -314,7 +311,7 @@ func Test_NewBufferWith(t *testing.T) {
 		want := []float32{1.1, 2.2, 3.3, 4.4, 5.5}
 		bufferId, buffer, err := NewBufferWith(input)
 		require.NoError(t, err)
-		require.True(t, validId(bufferId))
+		require.True(t, validBufferId(bufferId))
 		require.Len(t, buffer, len(want))
 		require.Equal(t, cap(want), cap(buffer))
 		require.Equal(t, want, buffer)
@@ -332,14 +329,14 @@ func Test_BufferId_Close(t *testing.T) {
 	})
 
 	t.Run("invalid cache id", func(t *testing.T) {
-		bufferId := BufferId(2000)
-		require.EqualError(t, bufferId.Close(), "Unable to free buffer: Failed to retrieve buffer: Invalid cache Id: 2000")
+		bufferId := BufferId(math.MaxInt32 - 1)
+		require.EqualError(t, bufferId.Close(), fmt.Sprintf("unable to free buffer: invalid buffer id: %d", math.MaxInt32-1))
 	})
 
 	t.Run("valid buffer id", func(t *testing.T) {
 		bufferId, buffer, err := NewBuffer[int32](10)
 		require.NoError(t, err)
-		require.True(t, validId(bufferId))
+		require.True(t, validBufferId(bufferId))
 
 		for i := range buffer {
 			buffer[i] = int32(i + 1)
