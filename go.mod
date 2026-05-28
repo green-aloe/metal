@@ -1,6 +1,6 @@
 module github.com/green-aloe/metal
 
-go 1.20
+go 1.26
 
 require github.com/stretchr/testify v1.8.4
 
