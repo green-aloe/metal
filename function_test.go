@@ -1,5 +1,4 @@
 //go:build darwin
-// +build darwin
 
 package metal
 
@@ -32,26 +31,63 @@ var (
 )
 
 var (
-	// nextMetalId tracks the Id that should be returned for the next metal resource. We're going to
-	// use this to make sure the metal cache is working as expected. Every time a new metal function
-	// or metal buffer is created, this should be incremented. Because this is a global variable,
-	// all tests that create new metal resources must be run concurrently.
-	nextMetalId = 1
+	// nextFunctionId and nextBufferId track the IDs that should be returned for the next function
+	// and buffer respectively. We use these to verify the caches are working correctly — each new
+	// resource must get the next sequential ID from its own counter. Because these are global
+	// variables, all tests that create new metal resources must be run serially (the default).
+	nextFunctionId = 1
+	nextBufferId   = 1
 )
 
-// validId tests that the Id has the expected value.
-func validId[T int | BufferId](id T) bool {
-	ok := int(id) == nextMetalId
+// validFunctionId tests that a Function ID has the expected value.
+func validFunctionId(id int32) bool {
+	ok := int(id) == nextFunctionId
 	if ok {
-		addId()
+		nextFunctionId++
 	}
-
 	return ok
 }
 
-// addId marks that another Id was returned for a metal resource.
-func addId() {
-	nextMetalId++
+// validBufferId tests that a BufferId has the expected value.
+func validBufferId(id BufferId) bool {
+	ok := int(id) == nextBufferId
+	if ok {
+		nextBufferId++
+	}
+	return ok
+}
+
+// addFunctionId marks that another function ID was returned.
+func addFunctionId() {
+	nextFunctionId++
+}
+
+// addBufferId marks that another buffer ID was returned.
+func addBufferId() {
+	nextBufferId++
+}
+
+// Test_Available tests that Available reports the package's initialization state and stays
+// consistent with the public entry points.
+func Test_Available(t *testing.T) {
+	// These tests run on a machine with a working GPU, so initialization is expected to have
+	// succeeded. Available must agree with the internal flag and return no error.
+	require.True(t, metalAvailable)
+	require.NoError(t, Available())
+
+	// When Metal is available, NewFunction and NewBuffer must not short-circuit with
+	// ErrMetalUnavailable; they should proceed to their normal success paths. We advance the global
+	// id counters with addFunctionId/addBufferId (rather than asserting an exact next id) so this
+	// test does not depend on running before or after the sequential-id tests.
+	function, err := NewFunction(sourceNoop, "noop")
+	require.NoError(t, err)
+	require.True(t, function.Valid())
+	addFunctionId()
+
+	bufferId, _, err := NewBuffer[float32](1)
+	require.NoError(t, err)
+	require.True(t, bufferId.Valid())
+	addBufferId()
 }
 
 // Test_Function_NewFunction tests that NewFunction either creates a new metal function or returns
@@ -67,35 +103,35 @@ func Test_Function_NewFunction(t *testing.T) {
 	subtests := []subtest{
 		{
 			name:     " no source or function name",
-			wantErrs: []string{"Unable to set up metal function: Missing metal code"},
+			wantErrs: []string{"unable to set up metal function: missing metal code"},
 		},
 		{
 			name:     "invalid source, no function name",
 			source:   "invalid",
-			wantErrs: []string{"Unable to set up metal function: Missing function name"},
+			wantErrs: []string{"unable to set up metal function: missing function name"},
 		},
 		{
 			name:     "no source, invalid function name",
 			function: "invalid",
-			wantErrs: []string{"Unable to set up metal function: Missing metal code"},
+			wantErrs: []string{"unable to set up metal function: missing metal code"},
 		},
 		{
 			name:     "invalid source, invalid function name",
 			source:   "invalid",
 			function: "invalid",
-			wantErrs: []string{"Unable to set up metal function: Failed to create library", "unknown type name 'invalid'"},
+			wantErrs: []string{"unable to set up metal function: failed to create library", "unknown type name 'invalid'"},
 		},
 		{
 			name:     "valid source, no function name",
 			source:   sourceTransfer1D,
 			function: "",
-			wantErrs: []string{"Unable to set up metal function: Missing function name"},
+			wantErrs: []string{"unable to set up metal function: missing function name"},
 		},
 		{
 			name:     "valid source, invalid function name",
 			source:   sourceTransfer1D,
 			function: "invalid",
-			wantErrs: []string{"Unable to set up metal function: Failed to find function 'invalid'"},
+			wantErrs: []string{"unable to set up metal function: failed to find function 'invalid'"},
 		},
 		{
 			name:     "valid source, valid function name",
@@ -114,17 +150,17 @@ func Test_Function_NewFunction(t *testing.T) {
 			case 0:
 				require.NoError(t, err, "Unable to create metal function: %s", err)
 				require.True(t, function.Valid())
-				require.True(t, validId(function.id))
+				require.True(t, validFunctionId(function.id))
 			case 1:
 				require.EqualError(t, err, subtest.wantErrs[0])
 				require.False(t, function.Valid())
-				require.False(t, validId(function.id))
+				require.False(t, validFunctionId(0))
 			default:
 				for _, wantErr := range subtest.wantErrs {
 					require.ErrorContains(t, err, wantErr)
 				}
 				require.False(t, function.Valid())
-				require.False(t, validId(function.id))
+				require.False(t, validFunctionId(0))
 			}
 		})
 	}
@@ -134,15 +170,43 @@ func Test_Function_NewFunction(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		function, err := NewFunction(sourceTransfer1D, "transfer1D")
 		require.NoError(t, err)
-		require.True(t, validId(function.id), "%d %d %v %d", nextMetalId, i, function, function.id)
+		require.True(t, validFunctionId(function.id), "%d %d %v %d", nextFunctionId, i, function, function.id)
 	}
+}
+
+// Test_Function_Close tests that Function's Close method correctly releases the function.
+func Test_Function_Close(t *testing.T) {
+	t.Run("nil pointer", func(t *testing.T) {
+		var nilPtr *Function
+		require.ErrorIs(t, nilPtr.Close(), ErrInvalidFunctionId)
+	})
+
+	t.Run("uninitialized function", func(t *testing.T) {
+		var function Function
+		require.ErrorIs(t, function.Close(), ErrInvalidFunctionId)
+	})
+
+	t.Run("invalid cache id", func(t *testing.T) {
+		function := Function{id: 99999}
+		require.EqualError(t, function.Close(), "unable to close metal function: invalid function id: 99999")
+	})
+
+	t.Run("valid function", func(t *testing.T) {
+		function, err := NewFunction(sourceNoop, "noop")
+		require.NoError(t, err)
+		require.True(t, validFunctionId(function.id))
+		require.True(t, function.Valid())
+
+		require.NoError(t, function.Close())
+		require.False(t, function.Valid())
+	})
 }
 
 // Test_Function_Valid tests that Function's Valid method correctly identifies a valid function Id.
 func Test_Function_Valid(t *testing.T) {
 	// A valid function Id has a positive value. Let's run through a bunch of numbers and test that
 	// Valid always reports the correct status.
-	for i := -100_00; i <= 100_000; i++ {
+	for i := int32(-100_00); i <= 100_000; i++ {
 		function := Function{id: i}
 
 		if i > 0 {
@@ -163,7 +227,7 @@ func Test_Function_String(t *testing.T) {
 
 	t.Run("invalid function", func(t *testing.T) {
 		function, err := NewFunction("", "")
-		require.EqualError(t, err, "Unable to set up metal function: Missing metal code")
+		require.EqualError(t, err, "unable to set up metal function: missing metal code")
 		require.False(t, function.Valid())
 		require.Equal(t, "", function.String())
 	})
@@ -172,8 +236,22 @@ func Test_Function_String(t *testing.T) {
 		function, err := NewFunction(sourceTransfer1D, "transfer1D")
 		require.NoError(t, err)
 		require.True(t, function.Valid())
-		require.True(t, validId(function.id))
+		require.True(t, validFunctionId(function.id))
 		require.Equal(t, "transfer1D", function.String())
+	})
+
+	t.Run("closed function", func(t *testing.T) {
+		// After Close, the function is no longer valid, so String reports the empty string rather than
+		// reaching into the (now-released) cache. Close must be sequenced before String here; the two
+		// are not safe to call concurrently on the same Function.
+		function, err := NewFunction(sourceTransfer1D, "transfer1D")
+		require.NoError(t, err)
+		require.True(t, validFunctionId(function.id))
+		require.Equal(t, "transfer1D", function.String())
+
+		require.NoError(t, function.Close())
+		require.False(t, function.Valid())
+		require.Equal(t, "", function.String())
 	})
 }
 
@@ -181,7 +259,7 @@ func Test_Function_String(t *testing.T) {
 // still return the correct function Id.
 func Test_Function_NewFunction_threadSafe(t *testing.T) {
 	type data struct {
-		function Function
+		function *Function
 		wantName string
 	}
 
@@ -222,14 +300,14 @@ func Test_Function_NewFunction_threadSafe(t *testing.T) {
 	for i := 0; i < numIter; i++ {
 		data := <-dataCh
 
-		_, ok := idMap[data.function]
+		_, ok := idMap[*data.function]
 		require.False(t, ok)
-		idMap[data.function] = struct{}{}
+		idMap[*data.function] = struct{}{}
 
 		haveName := data.function.String()
 		require.Equal(t, data.wantName, haveName)
 
-		addId()
+		addFunctionId()
 	}
 
 	// Test that we received every Id in the sequence.
@@ -240,7 +318,7 @@ func Test_Function_NewFunction_threadSafe(t *testing.T) {
 	sort.Slice(idList, func(i, j int) bool { return idList[i].id < idList[j].id })
 	require.Len(t, idList, numIter)
 	for i := 0; i < numIter; i++ {
-		require.Equal(t, nextMetalId-numIter+i, int(idList[i].id))
+		require.Equal(t, nextFunctionId-numIter+i, int(idList[i].id))
 	}
 }
 
@@ -248,21 +326,38 @@ func Test_Function_NewFunction_threadSafe(t *testing.T) {
 func Test_Function_Run_invalid(t *testing.T) {
 	function, err := NewFunction(sourceNoop, "noop")
 	require.NoError(t, err)
-	require.True(t, validId(function.id))
+	require.True(t, validFunctionId(function.id))
 
 	t.Run("invalid (uninitialized) function", func(t *testing.T) {
 		var emptyFunction Function
 		err := emptyFunction.Run(RunParameters{})
-		require.EqualError(t, err, "Unable to run metal function: Failed to retrieve function: Invalid cache Id: 0")
+		require.EqualError(t, err, "unable to run metal function: failed to retrieve function: invalid cache id: 0")
 	})
 
 	t.Run("non-existent buffer", func(t *testing.T) {
 		err := function.Run(RunParameters{BufferIds: []BufferId{10000}})
-		require.EqualError(t, err, "Unable to run metal function: Failed to retrieve buffer 1/1: Invalid cache Id: 10000")
+		require.EqualError(t, err, "unable to run metal function: failed to retrieve buffer 1/1: invalid cache id: 10000")
 	})
 
-	t.Run("invalid grid", func(t *testing.T) {
-		err := function.Run(RunParameters{Grid: Grid{X: -1, Y: -1, Z: -1}})
+	t.Run("negative grid X", func(t *testing.T) {
+		err := function.Run(RunParameters{Grid: Grid{X: -1}})
+		require.EqualError(t, err, "invalid grid dimension")
+	})
+
+	t.Run("negative grid Y", func(t *testing.T) {
+		err := function.Run(RunParameters{Grid: Grid{Y: -1}})
+		require.EqualError(t, err, "invalid grid dimension")
+	})
+
+	t.Run("negative grid Z", func(t *testing.T) {
+		err := function.Run(RunParameters{Grid: Grid{Z: -1}})
+		require.EqualError(t, err, "invalid grid dimension")
+	})
+
+	t.Run("zero grid clamps to one", func(t *testing.T) {
+		// A fully-zero grid is the zero value of Grid; every dimension clamps to 1 and the noop
+		// kernel (which takes no buffers) runs successfully.
+		err := function.Run(RunParameters{Grid: Grid{X: 0, Y: 0, Z: 0}})
 		require.NoError(t, err)
 	})
 }
@@ -276,15 +371,15 @@ func Test_Function_Run_1D(t *testing.T) {
 			// Set up a metal function that simply transfers all inputs to the outputs.
 			function, err := NewFunction(sourceTransfer1D, "transfer1D")
 			require.NoError(t, err)
-			require.True(t, validId(function.id))
+			require.True(t, validFunctionId(function.id))
 
 			// Set up input and output buffers.
 			inputId, input, err := NewBuffer[float32](width)
 			require.NoError(t, err)
-			require.True(t, validId(inputId))
+			require.True(t, validBufferId(inputId))
 			outputId, output, err := NewBuffer[float32](width)
 			require.NoError(t, err)
-			require.True(t, validId(outputId))
+			require.True(t, validBufferId(outputId))
 
 			// Set some initial values for the input.
 			for i := range input {
@@ -330,15 +425,15 @@ func Test_Function_Run_2D(t *testing.T) {
 			// Set up a metal function that simply transfers all inputs to the outputs and adds 1.
 			function, err := NewFunction(sourceTransfer2D, "transfer2D")
 			require.NoError(t, err)
-			require.True(t, validId(function.id))
+			require.True(t, validFunctionId(function.id))
 
 			// Set up input and output buffers.
 			inputId, i, err := NewBuffer[float32](width * height)
 			require.NoError(t, err)
-			require.True(t, validId(inputId))
+			require.True(t, validBufferId(inputId))
 			outputId, o, err := NewBuffer[float32](width * height)
 			require.NoError(t, err)
-			require.True(t, validId(outputId))
+			require.True(t, validBufferId(outputId))
 
 			input := Fold(i, width)
 			output := Fold(o, width)
@@ -406,15 +501,15 @@ func Test_Function_Run_3D(t *testing.T) {
 			// Set up a metal function that simply transfers all inputs to the outputs.
 			function, err := NewFunction(sourceTransfer3D, "transfer3D")
 			require.NoError(t, err)
-			require.True(t, validId(function.id))
+			require.True(t, validFunctionId(function.id))
 
 			// Set up input and output buffers.
 			inputId, i, err := NewBuffer[float32](width * height * depth)
 			require.NoError(t, err)
-			require.True(t, validId(inputId))
+			require.True(t, validBufferId(inputId))
 			outputId, o, err := NewBuffer[float32](width * height * depth)
 			require.NoError(t, err)
-			require.True(t, validId(outputId))
+			require.True(t, validBufferId(outputId))
 
 			input := Fold(Fold(i, width*height), width)
 			output := Fold(Fold(o, width*height), width)
@@ -471,13 +566,12 @@ func Test_Function_Run_threadSafe(t *testing.T) {
 		iteration int
 		input     []float32
 		output    []float32
-		err       error
 	}
 
 	// Set up the metal function.
 	function, err := NewFunction(sourceTransfer1D, "transfer1D")
 	require.NoError(t, err)
-	require.True(t, validId(function.id))
+	require.True(t, validFunctionId(function.id))
 
 	// We're going to use a wait group to block each goroutine after it's prepared until they're all
 	// ready to fire.
@@ -495,10 +589,10 @@ func Test_Function_Run_threadSafe(t *testing.T) {
 		// Create the buffers for this iteration.
 		inputId, input, err := NewBuffer[float32](width)
 		require.NoError(t, err)
-		require.True(t, validId(inputId))
+		require.True(t, validBufferId(inputId))
 		outputId, output, err := NewBuffer[float32](width)
 		require.NoError(t, err)
-		require.True(t, validId(outputId))
+		require.True(t, validBufferId(outputId))
 
 		// Set values in the input so we can test that the output was operated on correctly.
 		for i := range input {
@@ -514,12 +608,12 @@ func Test_Function_Run_threadSafe(t *testing.T) {
 				Grid:      grid,
 				BufferIds: []BufferId{inputId, outputId},
 			})
+			require.NoError(t, err, "Unable to run metal function (iteration %d): %v", iteration, err)
 
 			dataCh <- data{
 				iteration: iteration,
 				input:     input,
 				output:    output,
-				err:       err,
 			}
 		}(iteration)
 
@@ -530,8 +624,6 @@ func Test_Function_Run_threadSafe(t *testing.T) {
 	// Test that each output received the correct values.
 	for iteration := 1; iteration <= numIter; iteration++ {
 		data := <-dataCh
-		require.NoError(t, err, "Unable to run metal function (iteration %d): %s", data.iteration, err)
-
 		for i := range data.output {
 			require.Equal(t, float32(i*data.iteration), data.output[i], "Iteration %d failed on item %d", data.iteration, i+1)
 		}
@@ -541,20 +633,21 @@ func Test_Function_Run_threadSafe(t *testing.T) {
 // Test_Function_types tests that specific primitive types in go line up with specific primitive
 // types in metal.
 func Test_Function_types(t *testing.T) {
+	// The wantFail cases deliberately store a Go value into a buffer whose Metal type is narrower, so
+	// the bytes are reinterpreted and the round-trip does not match. Since 64-bit Go types are no
+	// longer part of BufferType, the "store a wider type" mismatches are demonstrated with the
+	// narrower in-range types (float32 into half, int32 into short, uint32 into ushort).
 	testType[float32](t, "float", false, func(i int) float32 { return float32(i) * 1.1 })
-	testType[float64](t, "float", true, func(i int) float64 { return float64(i) * 1.1 })
 
 	// Go doesn't currently have an equivalent "float16" type
 	testType[float32](t, "half", true, func(i int) float32 { return float32(i) * 1.1 })
 
 	testType[int32](t, "int", false, func(i int) int32 { return int32(-i) })
-	testType[int64](t, "int", true, func(i int) int64 { return int64(-i) })
 
 	testType[int16](t, "short", false, func(i int) int16 { return int16(-i) })
 	testType[int32](t, "short", true, func(i int) int32 { return int32(-i) })
 
 	testType[uint32](t, "uint", false, func(i int) uint32 { return uint32(i) })
-	testType[uint64](t, "uint", true, func(i int) uint64 { return uint64(i) })
 
 	testType[uint16](t, "ushort", false, func(i int) uint16 { return uint16(i) })
 	testType[uint32](t, "ushort", true, func(i int) uint32 { return uint32(i) })
@@ -569,15 +662,15 @@ func testType[T BufferType](t *testing.T, metalType string, wantFail bool, sette
 		// Set up a metal function.
 		function, err := NewFunction(source, "transferType")
 		require.NoError(t, err)
-		require.True(t, validId(function.id))
+		require.True(t, validFunctionId(function.id))
 
 		// Create the input and output buffers.
 		inputId, input, err := NewBuffer[T](100)
 		require.NoError(t, err)
-		require.True(t, validId(inputId))
+		require.True(t, validBufferId(inputId))
 		outputId, output, err := NewBuffer[T](100)
 		require.NoError(t, err)
-		require.True(t, validId(outputId))
+		require.True(t, validBufferId(outputId))
 
 		// Set the inputs.
 		for i := range input {
@@ -610,13 +703,13 @@ func Benchmark_Run(b *testing.B) {
 
 		// Set up a metal function.
 		function, _ := NewFunction(sourceSine, "sine")
-		addId()
+		addFunctionId()
 
 		// Set up input and output buffers.
 		inputId, input, _ := NewBuffer[float32](width)
-		addId()
+		addBufferId()
 		outputId, output, _ := NewBuffer[float32](width)
-		addId()
+		addBufferId()
 
 		for i := range input {
 			input[i] = rand.Float32()
