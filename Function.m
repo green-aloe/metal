@@ -137,6 +137,112 @@ int function_new(const char *metalCode, const char *funcName,
   }
 }
 
+// Encode a single compute dispatch into encoder: look up the function, set its
+// pipeline, bind the scalar inputs and buffers as arguments, and dispatch the
+// grid. Returns false and sets error/errorCode on failure. The caller owns the
+// encoder and is responsible for endEncoding in all cases; on the failure paths
+// here the encoder has not been ended yet, so the caller must end it.
+//
+// This is the shared core of function_run, function_run_batch, and
+// function_run_async — the three differ only in how they manage the command
+// buffer around this dispatch.
+static _Bool encode_dispatch(id<MTLComputeCommandEncoder> encoder,
+                             int functionId, unsigned int width,
+                             unsigned int height, unsigned int depth,
+                             float *inputs, int numInputs, int *bufferIds,
+                             int numBufferIds, const char **error,
+                             int *errorCode) {
+  // Fetch the function from the cache.
+  [functionLock lock];
+  MetalFunction *function = functionCache[@(functionId)];
+  [functionLock unlock];
+
+  if (function == nil) {
+    logError(error, [NSString stringWithFormat:@"failed to retrieve function: invalid function id: %d", functionId]);
+    setErrorCode(errorCode, MetalErrorInvalidFunctionId);
+    return false;
+  }
+
+  // Set the pipeline that the encoder will use.
+  [encoder setComputePipelineState:function.pipeline];
+
+  // Set the arguments that will be passed to the function. The indexes for the
+  // arguments here need to match their order in the function declaration. We'll
+  // start with the arguments that are static values, and then we'll add the
+  // buffers. We currently support using only the entire buffer without any
+  // offsets, which could be used to, say, use one part of a buffer for one
+  // function argument and the other part for a different argument.
+  int index = 0;
+  for (int i = 0; i < numInputs; i++) {
+    [encoder setBytes:&inputs[i] length:sizeof(float) atIndex:index++];
+  }
+  for (int i = 0; i < numBufferIds; i++) {
+    // Retrieve the buffer for this Id from the buffer cache.
+    id<MTLBuffer> buffer = buffer_cache_retrieve(bufferIds[i]);
+    if (buffer == nil) {
+      logError(error,
+               [NSString stringWithFormat:@"failed to retrieve buffer %d/%d: invalid buffer id: %d",
+                                          i + 1, numBufferIds, bufferIds[i]]);
+      setErrorCode(errorCode, MetalErrorInvalidBufferId);
+      return false;
+    }
+
+    [encoder setBuffer:buffer offset:0 atIndex:index++];
+  }
+
+  // Specify how many threads we need to perform all the calculations (one
+  // thread per calculation).
+  MTLSize gridSize = MTLSizeMake(width, height, depth);
+
+  // Figure out how many threads will be grouped together into each threadgroup.
+  // There are two variables that are important here:
+  //
+  //     pipeline.threadExecutionWidth:
+  //         Maximum number of threads that the GPU can execute at one time in
+  //         parallel (aka thread warp size, aka SIMD group size)
+  //     pipeline.maxTotalThreadsPerThreadgroup:
+  //         Maximum number of threads that can be bundled together into a
+  //         threadgroup
+  //
+  // We're going to divide the threads conceptually into two dimensions and then
+  // place them into a 3-dimensional grid with no height. The first dimension
+  // will be the number of threads that can run at one time (the thread warp
+  // size). The second dimension will be the maximum number of parallel thread
+  // bundles.
+  //
+  // For more details on threads, grids, and threadgroup sizes, see
+  // https://developer.apple.com/documentation/metal/compute_passes/calculating_threadgroup_and_grid_sizes.
+  NSUInteger w = function.pipeline.threadExecutionWidth;
+  // maxTotalThreadsPerThreadgroup is per-pipeline and can be smaller than the
+  // device's threadExecutionWidth for kernels with high register pressure,
+  // which would make this division zero. A threadgroup with a zero dimension
+  // is invalid and faults at dispatch, so clamp the height to at least one.
+  NSUInteger h = function.pipeline.maxTotalThreadsPerThreadgroup / w;
+  if (h == 0) {
+    h = 1;
+  }
+  MTLSize threadgroupSize = MTLSizeMake(w, h, 1);
+
+  // Dispatch the work. dispatchThreads:threadsPerThreadgroup: lets Metal size
+  // the grid exactly (one thread per element, no over-dispatch) but requires
+  // non-uniform threadgroup support. On hardware without it, fall back to
+  // dispatchThreadgroups:threadsPerThreadgroup:, rounding the threadgroup count
+  // up so every element is covered; kernels are responsible for bounds-checking
+  // their thread position against the real problem size in that case.
+  if (supportsNonUniformThreadgroups) {
+    [encoder dispatchThreads:gridSize threadsPerThreadgroup:threadgroupSize];
+  } else {
+    MTLSize threadgroupCount = MTLSizeMake(
+        (gridSize.width + threadgroupSize.width - 1) / threadgroupSize.width,
+        (gridSize.height + threadgroupSize.height - 1) / threadgroupSize.height,
+        (gridSize.depth + threadgroupSize.depth - 1) / threadgroupSize.depth);
+    [encoder dispatchThreadgroups:threadgroupCount
+            threadsPerThreadgroup:threadgroupSize];
+  }
+
+  return true;
+}
+
 // Execute the computational process on the GPU. Each buffer is supplied as an
 // argument to the metal code in the same order as the buffer Ids here. This is
 // safe for concurrent use: each call creates its own command buffer and encoder,
@@ -153,17 +259,6 @@ _Bool function_run(int functionId, unsigned int width, unsigned int height,
   // autorelease pool to drain them, and function_run is the hot path, so without
   // this they would accumulate on every call.
   @autoreleasepool {
-    // Fetch the function from the cache.
-    [functionLock lock];
-    MetalFunction *function = functionCache[@(functionId)];
-    [functionLock unlock];
-
-    if (function == nil) {
-      logError(error, [NSString stringWithFormat:@"failed to retrieve function: invalid function id: %d", functionId]);
-      setErrorCode(errorCode, MetalErrorInvalidFunctionId);
-      return false;
-    }
-
     // Create a command buffer from the shared command queue. This will hold the
     // processing commands and move through the queue to the GPU. If metal_init
     // never succeeded commandQueue is nil, but ObjC nil-messaging makes this a
@@ -183,84 +278,12 @@ _Bool function_run(int functionId, unsigned int width, unsigned int height,
       return false;
     }
 
-    // Set the pipeline that the encoder will use.
-    [encoder setComputePipelineState:function.pipeline];
-
-    // Set the arguments that will be passed to the function. The indexes for the
-    // arguments here need to match their order in the function declaration. We'll
-    // start with the arguments that are static values, and then we'll add the
-    // buffers. We currently support using only the entire buffer without any
-    // offsets, which could be used to, say, use one part of a buffer for one
-    // function argument and the other part for a different argument.
-    int index = 0;
-    for (int i = 0; i < numInputs; i++) {
-      [encoder setBytes:&inputs[i] length:sizeof(float) atIndex:index++];
-    }
-    for (int i = 0; i < numBufferIds; i++) {
-      // Retrieve the buffer for this Id from the buffer cache.
-      id<MTLBuffer> buffer = buffer_cache_retrieve(bufferIds[i]);
-      if (buffer == nil) {
-        // Close out the encoder before bailing — Metal requires endEncoding
-        // before the encoder is released, even on the error path.
-        [encoder endEncoding];
-        logError(error,
-                 [NSString stringWithFormat:@"failed to retrieve buffer %d/%d: invalid buffer id: %d",
-                                            i + 1, numBufferIds, bufferIds[i]]);
-        setErrorCode(errorCode, MetalErrorInvalidBufferId);
-        return false;
-      }
-
-      [encoder setBuffer:buffer offset:0 atIndex:index++];
-    }
-
-    // Specify how many threads we need to perform all the calculations (one
-    // thread per calculation).
-    MTLSize gridSize = MTLSizeMake(width, height, depth);
-
-    // Figure out how many threads will be grouped together into each threadgroup.
-    // There are two variables that are important here:
-    //
-    //     pipeline.threadExecutionWidth:
-    //         Maximum number of threads that the GPU can execute at one time in
-    //         parallel (aka thread warp size, aka SIMD group size)
-    //     pipeline.maxTotalThreadsPerThreadgroup:
-    //         Maximum number of threads that can be bundled together into a
-    //         threadgroup
-    //
-    // We're going to divide the threads conceptually into two dimensions and then
-    // place them into a 3-dimensional grid with no height. The first dimension
-    // will be the number of threads that can run at one time (the thread warp
-    // size). The second dimension will be the maximum number of parallel thread
-    // bundles.
-    //
-    // For more details on threads, grids, and threadgroup sizes, see
-    // https://developer.apple.com/documentation/metal/compute_passes/calculating_threadgroup_and_grid_sizes.
-    NSUInteger w = function.pipeline.threadExecutionWidth;
-    // maxTotalThreadsPerThreadgroup is per-pipeline and can be smaller than the
-    // device's threadExecutionWidth for kernels with high register pressure,
-    // which would make this division zero. A threadgroup with a zero dimension
-    // is invalid and faults at dispatch, so clamp the height to at least one.
-    NSUInteger h = function.pipeline.maxTotalThreadsPerThreadgroup / w;
-    if (h == 0) {
-      h = 1;
-    }
-    MTLSize threadgroupSize = MTLSizeMake(w, h, 1);
-
-    // Dispatch the work. dispatchThreads:threadsPerThreadgroup: lets Metal size
-    // the grid exactly (one thread per element, no over-dispatch) but requires
-    // non-uniform threadgroup support. On hardware without it, fall back to
-    // dispatchThreadgroups:threadsPerThreadgroup:, rounding the threadgroup count
-    // up so every element is covered; kernels are responsible for bounds-checking
-    // their thread position against the real problem size in that case.
-    if (supportsNonUniformThreadgroups) {
-      [encoder dispatchThreads:gridSize threadsPerThreadgroup:threadgroupSize];
-    } else {
-      MTLSize threadgroupCount = MTLSizeMake(
-          (gridSize.width + threadgroupSize.width - 1) / threadgroupSize.width,
-          (gridSize.height + threadgroupSize.height - 1) / threadgroupSize.height,
-          (gridSize.depth + threadgroupSize.depth - 1) / threadgroupSize.depth);
-      [encoder dispatchThreadgroups:threadgroupCount
-              threadsPerThreadgroup:threadgroupSize];
+    if (!encode_dispatch(encoder, functionId, width, height, depth, inputs,
+                         numInputs, bufferIds, numBufferIds, error, errorCode)) {
+      // Metal requires endEncoding before the encoder is released, even on the
+      // error path.
+      [encoder endEncoding];
+      return false;
     }
 
     // Mark that we're done encoding the buffer and can proceed with executing the
@@ -271,6 +294,177 @@ _Bool function_run(int functionId, unsigned int width, unsigned int height,
     // and run on the GPU, and then wait for the calculations to finish.
     [commandBuffer commit];
     [commandBuffer waitUntilCompleted];
+
+    return true;
+  }
+}
+
+// Encode numDispatches dispatches into commandBuffer, one compute encoder each,
+// reading dispatch i's parameters from element i of the parallel arrays. Returns
+// false and sets error/errorCode if any dispatch fails to encode (the caller
+// then discards commandBuffer without committing). This is the shared core of the
+// sync and async batch entry points; they differ only in whether they wait after
+// committing.
+static _Bool encode_batch_into(id<MTLCommandBuffer> commandBuffer,
+                               int numDispatches, int *functionIds,
+                               unsigned int *widths, unsigned int *heights,
+                               unsigned int *depths, float **inputs,
+                               int *numInputs, int **bufferIds,
+                               int *numBufferIds, const char **error,
+                               int *errorCode) {
+  for (int i = 0; i < numDispatches; i++) {
+    id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
+    if (encoder == nil) {
+      logError(error, @"failed to set up compute encoder");
+      return false;
+    }
+
+    if (!encode_dispatch(encoder, functionIds[i], widths[i], heights[i],
+                         depths[i], inputs[i], numInputs[i], bufferIds[i],
+                         numBufferIds[i], error, errorCode)) {
+      [encoder endEncoding];
+      return false;
+    }
+
+    [encoder endEncoding];
+  }
+
+  return true;
+}
+
+// Execute several dispatches as a single command buffer, committing once and
+// waiting once. Each dispatch i reads its parameters from element i of the
+// parallel arrays. Batching amortizes command-buffer setup and the single GPU
+// synchronization across all dispatches, which Apple recommends over many
+// one-shot command buffers. If any dispatch fails to encode, nothing is
+// committed and this returns false with the error describing which one failed.
+_Bool function_run_batch(int numDispatches, int *functionIds,
+                         unsigned int *widths, unsigned int *heights,
+                         unsigned int *depths, float **inputs, int *numInputs,
+                         int **bufferIds, int *numBufferIds,
+                         const char **error, int *errorCode) {
+  @autoreleasepool {
+    id<MTLCommandBuffer> commandBuffer = [commandQueue commandBuffer];
+    if (commandBuffer == nil) {
+      logError(error, @"failed to set up command buffer");
+      return false;
+    }
+
+    if (!encode_batch_into(commandBuffer, numDispatches, functionIds, widths,
+                           heights, depths, inputs, numInputs, bufferIds,
+                           numBufferIds, error, errorCode)) {
+      return false;
+    }
+
+    [commandBuffer commit];
+    [commandBuffer waitUntilCompleted];
+
+    return true;
+  }
+}
+
+// Encode and commit a batch of dispatches (like function_run_batch) without
+// waiting. On success *handle receives a retained reference to the in-flight
+// command buffer for the whole batch, which the caller must later pass to
+// function_wait exactly once. Because all dispatches share one command buffer, a
+// single wait covers the entire batch. Returns false and sets error/errorCode
+// (leaving *handle NULL) if any dispatch fails to encode; nothing is committed.
+_Bool function_run_batch_async(int numDispatches, int *functionIds,
+                               unsigned int *widths, unsigned int *heights,
+                               unsigned int *depths, float **inputs,
+                               int *numInputs, int **bufferIds,
+                               int *numBufferIds, void **handle,
+                               const char **error, int *errorCode) {
+  @autoreleasepool {
+    *handle = NULL;
+
+    id<MTLCommandBuffer> commandBuffer = [commandQueue commandBuffer];
+    if (commandBuffer == nil) {
+      logError(error, @"failed to set up command buffer");
+      return false;
+    }
+
+    if (!encode_batch_into(commandBuffer, numDispatches, functionIds, widths,
+                           heights, depths, inputs, numInputs, bufferIds,
+                           numBufferIds, error, errorCode)) {
+      return false;
+    }
+
+    [commandBuffer commit];
+
+    // Hand the command buffer to the caller as an opaque handle; function_wait
+    // balances this +1 retain with __bridge_transfer.
+    *handle = (__bridge_retained void *)commandBuffer;
+
+    return true;
+  }
+}
+
+// Encode and commit a single dispatch without waiting for it to finish. On
+// success *handle receives a retained reference to the in-flight command buffer
+// that the caller must later pass to function_wait (which releases it). The
+// caller keeps the CPU free to encode more work while the GPU runs. Returns
+// false and sets error/errorCode (and leaves *handle NULL) if encoding fails;
+// in that case nothing was committed and there is nothing to wait on.
+_Bool function_run_async(int functionId, unsigned int width,
+                         unsigned int height, unsigned int depth, float *inputs,
+                         int numInputs, int *bufferIds, int numBufferIds,
+                         void **handle, const char **error, int *errorCode) {
+  @autoreleasepool {
+    *handle = NULL;
+
+    id<MTLCommandBuffer> commandBuffer = [commandQueue commandBuffer];
+    if (commandBuffer == nil) {
+      logError(error, @"failed to set up command buffer");
+      return false;
+    }
+
+    id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
+    if (encoder == nil) {
+      logError(error, @"failed to set up compute encoder");
+      return false;
+    }
+
+    if (!encode_dispatch(encoder, functionId, width, height, depth, inputs,
+                         numInputs, bufferIds, numBufferIds, error, errorCode)) {
+      [encoder endEncoding];
+      return false;
+    }
+
+    [encoder endEncoding];
+    [commandBuffer commit];
+
+    // Hand the command buffer to the caller as an opaque handle. __bridge_retained
+    // transfers a +1 retain to the raw pointer so the command buffer outlives this
+    // autorelease pool; function_wait balances it with __bridge_transfer.
+    *handle = (__bridge_retained void *)commandBuffer;
+
+    return true;
+  }
+}
+
+// Wait for an async dispatch (started by function_run_async or
+// function_run_batch_async) to finish and release its command buffer. handle
+// must be a non-NULL handle returned by one of those and must be waited on
+// exactly once. A single wait covers the whole command buffer, so it completes
+// an entire async batch. After this call the handle is invalid. Returns false
+// and sets an error if the command buffer finished in an error state.
+_Bool function_wait(void *handle, const char **error) {
+  @autoreleasepool {
+    // __bridge_transfer takes back ownership of the +1 retain that the async
+    // entry point put on the raw pointer, so the command buffer is released when
+    // commandBuffer goes out of scope at the end of this pool.
+    id<MTLCommandBuffer> commandBuffer =
+        (__bridge_transfer id<MTLCommandBuffer>)handle;
+
+    [commandBuffer waitUntilCompleted];
+
+    if (commandBuffer.status == MTLCommandBufferStatusError) {
+      NSString *reason = commandBuffer.error.localizedDescription;
+      logError(error, [NSString stringWithFormat:@"command buffer failed: %@",
+                                                 reason ?: @"unknown error"]);
+      return false;
+    }
 
     return true;
   }

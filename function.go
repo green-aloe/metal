@@ -16,7 +16,9 @@ import (
 	"unsafe"
 )
 
-var ErrInvalidFunctionId = errors.New("invalid function id")
+// ----------------------------------------------------------------------------
+// Package initialization and availability
+// ----------------------------------------------------------------------------
 
 // ErrMetalUnavailable is returned by package functions when no Metal device
 // could be initialized (for example, on a machine without a supported GPU or in
@@ -46,6 +48,12 @@ func Available() error {
 	}
 	return nil
 }
+
+// ----------------------------------------------------------------------------
+// Function type and lifecycle
+// ----------------------------------------------------------------------------
+
+var ErrInvalidFunctionId = errors.New("invalid function id")
 
 // A Function references a specific metal function.
 // It is used to run computational processes on the GPU.
@@ -109,6 +117,33 @@ func (f *Function) String() string {
 	return C.GoString(name)
 }
 
+// Close releases the compiled pipeline for this function. The Function becomes invalid after this
+// call. It is the caller's responsibility to ensure no concurrent Run or String calls are in
+// progress.
+func (f *Function) Close() error {
+	if f == nil || !f.Valid() {
+		return ErrInvalidFunctionId
+	}
+
+	// The C side may strdup an error message into err on failure; we must free it. It also
+	// categorizes the failure in code so metalErrToError can attach the matching sentinel.
+	var err *C.char
+	defer func() { freeCString(err) }()
+	var code C.int
+
+	if !C.function_close(C.int(f.id), &err, &code) {
+		return metalErrToError(err, "unable to close metal function", code)
+	}
+
+	f.id = 0
+
+	return nil
+}
+
+// ----------------------------------------------------------------------------
+// Dispatch parameters
+// ----------------------------------------------------------------------------
+
 // A Grid specifies how many threads are needed to perform all the calculations. There should be one
 // thread per calculation.
 //
@@ -154,28 +189,16 @@ type RunParameters struct {
 	BufferIds []BufferId
 }
 
-// Close releases the compiled pipeline for this function. The Function becomes invalid after this
-// call. It is the caller's responsibility to ensure no concurrent Run or String calls are in
-// progress.
-func (f *Function) Close() error {
-	if f == nil || !f.Valid() {
-		return ErrInvalidFunctionId
-	}
-
-	// The C side may strdup an error message into err on failure; we must free it. It also
-	// categorizes the failure in code so metalErrToError can attach the matching sentinel.
-	var err *C.char
-	defer func() { freeCString(err) }()
-	var code C.int
-
-	if !C.function_close(C.int(f.id), &err, &code) {
-		return metalErrToError(err, "unable to close metal function", code)
-	}
-
-	f.id = 0
-
-	return nil
+// A RunHandle represents an in-flight asynchronous dispatch started by RunAsync or RunBatchAsync.
+// Call Wait exactly once to block until the GPU finishes and release the underlying command buffer.
+// A RunHandle must not be used after Wait returns.
+type RunHandle struct {
+	handle unsafe.Pointer
 }
+
+// ----------------------------------------------------------------------------
+// Dispatch: synchronous, batched, and asynchronous
+// ----------------------------------------------------------------------------
 
 // Run executes the computational function on the GPU. This can be called multiple times for the
 // same Function Id and/or same buffers and is safe for concurrent use.
@@ -193,31 +216,9 @@ func (f *Function) Run(params RunParameters) error {
 		return err
 	}
 
-	// Set up the dimensions of the grid. Every dimension must be at least one unit long. A zero
-	// dimension is a convenience for "unused" and clamps to 1; a negative dimension is a caller bug.
-	width, err := gridDimension(params.Grid.X)
+	width, height, depth, inputsPtr, bufferIdsPtr, err := params.prepare()
 	if err != nil {
 		return err
-	}
-	height, err := gridDimension(params.Grid.Y)
-	if err != nil {
-		return err
-	}
-	depth, err := gridDimension(params.Grid.Z)
-	if err != nil {
-		return err
-	}
-
-	// Get pointers to the inputs and buffer IDs. float32/C.float and int32/C.int are binary
-	// compatible on all Apple platforms, so we cast directly without copying.
-	var inputsPtr *C.float
-	if len(params.Inputs) > 0 {
-		inputsPtr = (*C.float)(unsafe.Pointer(&params.Inputs[0]))
-	}
-
-	var bufferIdsPtr *C.int
-	if len(params.BufferIds) > 0 {
-		bufferIdsPtr = (*C.int)(unsafe.Pointer(&params.BufferIds[0]))
 	}
 
 	// The C side may strdup an error message into cErr on failure; we must free it. It also
@@ -242,6 +243,246 @@ func (f *Function) Run(params RunParameters) error {
 	}
 
 	return nil
+}
+
+// RunBatch executes several dispatches of this function as a single GPU command buffer. Every
+// element of params is dispatched in order against this same Function, then the whole batch is
+// committed once and waited on once. Batching amortizes the per-command-buffer setup and the single
+// CPU/GPU synchronization across all dispatches, so it is significantly faster than calling Run in a
+// loop when you have many independent dispatches to run back to back.
+//
+// All dispatches share one command buffer, so they are not isolated: if any dispatch fails to encode
+// (invalid buffer id, invalid grid), nothing is committed and RunBatch returns that dispatch's error.
+// An empty params is a no-op that returns nil.
+//
+// Like Run, RunBatch is safe for concurrent use and blocks until the GPU finishes. The grid and
+// over-dispatch semantics for each dispatch are identical to Run.
+func (f *Function) RunBatch(params []RunParameters) error {
+	if err := Available(); err != nil {
+		return err
+	}
+	if len(params) == 0 {
+		return nil
+	}
+
+	var pinner runtime.Pinner
+	defer pinner.Unpin()
+
+	args, err := f.marshalBatch(params, &pinner)
+	if err != nil {
+		return err
+	}
+
+	var cErr *C.char
+	defer func() { freeCString(cErr) }()
+	var code C.int
+
+	ok := C.function_run_batch(C.int(len(params)), &args.functionIds[0], &args.widths[0], &args.heights[0],
+		&args.depths[0], &args.inputs[0], &args.numInputs[0], &args.bufferIds[0], &args.numBufferIds[0], &cErr, &code)
+
+	if !ok {
+		return metalErrToError(cErr, "unable to run metal function batch", code)
+	}
+
+	return nil
+}
+
+// RunAsync encodes and commits a dispatch like Run but returns immediately without waiting for the
+// GPU to finish, so the caller can keep the CPU busy (encoding more work, doing CPU computation)
+// while the GPU runs. The returned RunHandle must be passed to Wait exactly once to block for
+// completion; the results in the output buffers are only valid after Wait returns.
+//
+// The buffers referenced by params.BufferIds must not be closed until Wait has returned, since the
+// GPU reads and writes their shared memory while the dispatch is in flight. params.Inputs, by
+// contrast, are copied during the call and need not outlive it.
+//
+// RunAsync is safe for concurrent use. The grid and over-dispatch semantics are identical to Run.
+func (f *Function) RunAsync(params RunParameters) (*RunHandle, error) {
+	if err := Available(); err != nil {
+		return nil, err
+	}
+
+	width, height, depth, inputsPtr, bufferIdsPtr, err := params.prepare()
+	if err != nil {
+		return nil, err
+	}
+
+	var cErr *C.char
+	defer func() { freeCString(cErr) }()
+	var code C.int
+	var handle unsafe.Pointer
+
+	ok := C.function_run_async(C.int(f.id), width, height, depth, inputsPtr, C.int(len(params.Inputs)),
+		bufferIdsPtr, C.int(len(params.BufferIds)), &handle, &cErr, &code)
+
+	// Keep the slices alive through encoding (which happens synchronously inside the C call). After
+	// the call returns the dispatch is fully encoded: inputs were copied via setBytes, and the
+	// buffers are referenced from the command buffer and held alive by the buffer cache.
+	runtime.KeepAlive(params.Inputs)
+	runtime.KeepAlive(params.BufferIds)
+
+	if !ok {
+		return nil, metalErrToError(cErr, "unable to run metal function asynchronously", code)
+	}
+
+	return &RunHandle{handle: handle}, nil
+}
+
+// RunBatchAsync is the asynchronous counterpart of RunBatch: it encodes every dispatch into a single
+// command buffer and commits it, but returns a RunHandle immediately instead of waiting. Because the
+// whole batch is one command buffer, the single returned handle covers all of it — call Wait exactly
+// once to block until every dispatch in the batch has finished.
+//
+// As with RunBatch, the dispatches are not isolated: if any one fails to encode, nothing is committed
+// and RunBatchAsync returns that dispatch's error with a nil handle. An empty params returns a nil
+// handle and nil error (there is nothing to wait on). As with RunAsync, the referenced buffers must
+// not be closed until Wait has returned.
+//
+// RunBatchAsync is safe for concurrent use.
+func (f *Function) RunBatchAsync(params []RunParameters) (*RunHandle, error) {
+	if err := Available(); err != nil {
+		return nil, err
+	}
+	if len(params) == 0 {
+		return nil, nil
+	}
+
+	var pinner runtime.Pinner
+	defer pinner.Unpin()
+
+	args, err := f.marshalBatch(params, &pinner)
+	if err != nil {
+		return nil, err
+	}
+
+	var cErr *C.char
+	defer func() { freeCString(cErr) }()
+	var code C.int
+	var handle unsafe.Pointer
+
+	ok := C.function_run_batch_async(C.int(len(params)), &args.functionIds[0], &args.widths[0], &args.heights[0],
+		&args.depths[0], &args.inputs[0], &args.numInputs[0], &args.bufferIds[0], &args.numBufferIds[0], &handle, &cErr, &code)
+
+	if !ok {
+		return nil, metalErrToError(cErr, "unable to run metal function batch asynchronously", code)
+	}
+
+	return &RunHandle{handle: handle}, nil
+}
+
+// Wait blocks until the asynchronous work behind this handle finishes on the GPU and releases the
+// underlying command buffer. It must be called exactly once per RunHandle returned by RunAsync or
+// RunBatchAsync; calling it twice, or on a zero-value handle, returns an error rather than crashing.
+// For a RunBatchAsync handle the single Wait covers the entire batch. After Wait returns, the output
+// buffers hold the results.
+func (h *RunHandle) Wait() error {
+	if h == nil || h.handle == nil {
+		return errors.New("invalid run handle")
+	}
+
+	var cErr *C.char
+	defer func() { freeCString(cErr) }()
+
+	ok := C.function_wait(h.handle, &cErr)
+
+	// Clear the handle so a second Wait is a safe no-op error rather than a double free of the
+	// command buffer (function_wait took ownership of the retain via __bridge_transfer).
+	h.handle = nil
+
+	if !ok {
+		return metalErrToError(cErr, "unable to wait for metal function", errCodeNone)
+	}
+
+	return nil
+}
+
+// ----------------------------------------------------------------------------
+// Internal dispatch helpers
+// ----------------------------------------------------------------------------
+
+// prepare validates the grid and returns the C-typed grid dimensions plus pointers into the Inputs
+// and BufferIds backing arrays. float32/C.float and int32/C.int are binary compatible on all Apple
+// platforms, so the slices are cast directly without copying. The returned pointers are only valid
+// while the caller keeps params.Inputs and params.BufferIds alive (see runtime.KeepAlive at the
+// call sites).
+func (params RunParameters) prepare() (width, height, depth C.uint, inputsPtr *C.float, bufferIdsPtr *C.int, err error) {
+	// Every dimension must be at least one unit long. A zero dimension is a convenience for "unused"
+	// and clamps to 1; a negative dimension is a caller bug.
+	if width, err = gridDimension(params.Grid.X); err != nil {
+		return
+	}
+	if height, err = gridDimension(params.Grid.Y); err != nil {
+		return
+	}
+	if depth, err = gridDimension(params.Grid.Z); err != nil {
+		return
+	}
+
+	if len(params.Inputs) > 0 {
+		inputsPtr = (*C.float)(unsafe.Pointer(&params.Inputs[0]))
+	}
+	if len(params.BufferIds) > 0 {
+		bufferIdsPtr = (*C.int)(unsafe.Pointer(&params.BufferIds[0]))
+	}
+
+	return
+}
+
+// batchArgs holds the parallel C arrays that the batch entry points read, one element per dispatch.
+type batchArgs struct {
+	functionIds  []C.int
+	widths       []C.uint
+	heights      []C.uint
+	depths       []C.uint
+	inputs       []*C.float
+	numInputs    []C.int
+	bufferIds    []*C.int
+	numBufferIds []C.int
+}
+
+// marshalBatch validates every dispatch and builds the parallel C arrays for the batch entry points.
+//
+// inputs[i] and bufferIds[i] are Go pointers into each RunParameters' slice backing arrays, and they
+// are stored inside Go slices that are then passed to C by address. cgo forbids handing C a Go
+// pointer that points at memory containing other (unpinned) Go pointers, so each inner pointer is
+// pinned via pinner. Pinning also keeps the backing arrays alive for the call, so no separate
+// runtime.KeepAlive is needed. The caller owns pinner and must Unpin it once the C call returns.
+func (f *Function) marshalBatch(params []RunParameters, pinner *runtime.Pinner) (batchArgs, error) {
+	n := len(params)
+	args := batchArgs{
+		functionIds:  make([]C.int, n),
+		widths:       make([]C.uint, n),
+		heights:      make([]C.uint, n),
+		depths:       make([]C.uint, n),
+		inputs:       make([]*C.float, n),
+		numInputs:    make([]C.int, n),
+		bufferIds:    make([]*C.int, n),
+		numBufferIds: make([]C.int, n),
+	}
+
+	for i := range params {
+		width, height, depth, inputsPtr, bufferIdsPtr, err := params[i].prepare()
+		if err != nil {
+			return batchArgs{}, err
+		}
+
+		args.functionIds[i] = C.int(f.id)
+		args.widths[i] = width
+		args.heights[i] = height
+		args.depths[i] = depth
+		if inputsPtr != nil {
+			pinner.Pin(inputsPtr)
+		}
+		args.inputs[i] = inputsPtr
+		args.numInputs[i] = C.int(len(params[i].Inputs))
+		if bufferIdsPtr != nil {
+			pinner.Pin(bufferIdsPtr)
+		}
+		args.bufferIds[i] = bufferIdsPtr
+		args.numBufferIds[i] = C.int(len(params[i].BufferIds))
+	}
+
+	return args, nil
 }
 
 // gridDimension validates and normalizes a single grid dimension for the C layer. A size of 0 (an

@@ -711,6 +711,224 @@ func testType[T BufferType](t *testing.T, metalType string, wantFail bool, sette
 	})
 }
 
+// Test_Function_RunBatch tests that RunBatch dispatches every set of parameters against the same
+// function in a single command buffer and that each dispatch operates on its own buffers.
+func Test_Function_RunBatch(t *testing.T) {
+	function, err := NewFunction(sourceTransfer1D, "transfer1D")
+	require.NoError(t, err)
+	require.True(t, validFunctionId(function.id))
+
+	t.Run("empty batch is a no-op", func(t *testing.T) {
+		require.NoError(t, function.RunBatch(nil))
+		require.NoError(t, function.RunBatch([]RunParameters{}))
+	})
+
+	t.Run("multiple dispatches", func(t *testing.T) {
+		width := 1000
+		numDispatches := 8
+
+		// Each dispatch gets its own input/output buffer pair with distinct values, so a correct
+		// batch must transfer each input into its matching output independently.
+		params := make([]RunParameters, numDispatches)
+		inputs := make([][]float32, numDispatches)
+		outputs := make([][]float32, numDispatches)
+		for d := range params {
+			inputId, input, err := NewBuffer[float32](width)
+			require.NoError(t, err)
+			require.True(t, validBufferId(inputId))
+			outputId, output, err := NewBuffer[float32](width)
+			require.NoError(t, err)
+			require.True(t, validBufferId(outputId))
+
+			for i := range input {
+				input[i] = float32(i*(d+1)) + 0.5
+			}
+
+			params[d] = RunParameters{Grid: Grid{X: width}, BufferIds: []BufferId{inputId, outputId}}
+			inputs[d] = input
+			outputs[d] = output
+		}
+
+		require.NoError(t, function.RunBatch(params))
+
+		for d := range params {
+			require.Equal(t, inputs[d], outputs[d], "dispatch %d did not transfer correctly", d)
+		}
+	})
+
+	t.Run("invalid buffer in one dispatch fails the batch", func(t *testing.T) {
+		width := 10
+		inputId, _, err := NewBuffer[float32](width)
+		require.NoError(t, err)
+		require.True(t, validBufferId(inputId))
+		outputId, _, err := NewBuffer[float32](width)
+		require.NoError(t, err)
+		require.True(t, validBufferId(outputId))
+
+		err = function.RunBatch([]RunParameters{
+			{Grid: Grid{X: width}, BufferIds: []BufferId{inputId, outputId}},
+			{Grid: Grid{X: width}, BufferIds: []BufferId{10000, outputId}},
+		})
+		require.ErrorIs(t, err, ErrInvalidBufferId)
+	})
+
+	t.Run("invalid grid in one dispatch fails the batch", func(t *testing.T) {
+		err := function.RunBatch([]RunParameters{
+			{Grid: Grid{X: 10}},
+			{Grid: Grid{X: -1}},
+		})
+		require.EqualError(t, err, "invalid grid dimension")
+	})
+}
+
+// Test_Function_RunAsync tests that RunAsync starts a dispatch that produces correct results once
+// Wait returns, and that the handle guards against misuse.
+func Test_Function_RunAsync(t *testing.T) {
+	function, err := NewFunction(sourceTransfer1D, "transfer1D")
+	require.NoError(t, err)
+	require.True(t, validFunctionId(function.id))
+
+	t.Run("results are correct after Wait", func(t *testing.T) {
+		width := 100_000
+		inputId, input, err := NewBuffer[float32](width)
+		require.NoError(t, err)
+		require.True(t, validBufferId(inputId))
+		outputId, output, err := NewBuffer[float32](width)
+		require.NoError(t, err)
+		require.True(t, validBufferId(outputId))
+
+		for i := range input {
+			input[i] = float32(i) * 1.5
+		}
+
+		handle, err := function.RunAsync(RunParameters{
+			Grid:      Grid{X: width},
+			BufferIds: []BufferId{inputId, outputId},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, handle)
+
+		require.NoError(t, handle.Wait())
+		require.Equal(t, input, output)
+	})
+
+	t.Run("second Wait is a safe error", func(t *testing.T) {
+		width := 10
+		inputId, _, err := NewBuffer[float32](width)
+		require.NoError(t, err)
+		require.True(t, validBufferId(inputId))
+		outputId, _, err := NewBuffer[float32](width)
+		require.NoError(t, err)
+		require.True(t, validBufferId(outputId))
+
+		handle, err := function.RunAsync(RunParameters{
+			Grid:      Grid{X: width},
+			BufferIds: []BufferId{inputId, outputId},
+		})
+		require.NoError(t, err)
+		require.NoError(t, handle.Wait())
+		require.EqualError(t, handle.Wait(), "invalid run handle")
+	})
+
+	t.Run("nil handle Wait is a safe error", func(t *testing.T) {
+		var handle *RunHandle
+		require.EqualError(t, handle.Wait(), "invalid run handle")
+	})
+
+	t.Run("invalid buffer fails before returning a handle", func(t *testing.T) {
+		handle, err := function.RunAsync(RunParameters{
+			Grid:      Grid{X: 10},
+			BufferIds: []BufferId{10000},
+		})
+		require.ErrorIs(t, err, ErrInvalidBufferId)
+		require.Nil(t, handle)
+	})
+
+	t.Run("invalid grid fails before returning a handle", func(t *testing.T) {
+		handle, err := function.RunAsync(RunParameters{Grid: Grid{X: -1}})
+		require.EqualError(t, err, "invalid grid dimension")
+		require.Nil(t, handle)
+	})
+}
+
+// Test_Function_RunBatchAsync tests that RunBatchAsync commits a whole batch as one command buffer
+// and that a single Wait completes every dispatch with correct results.
+func Test_Function_RunBatchAsync(t *testing.T) {
+	function, err := NewFunction(sourceTransfer1D, "transfer1D")
+	require.NoError(t, err)
+	require.True(t, validFunctionId(function.id))
+
+	t.Run("empty batch returns nil handle and nil error", func(t *testing.T) {
+		handle, err := function.RunBatchAsync(nil)
+		require.NoError(t, err)
+		require.Nil(t, handle)
+	})
+
+	t.Run("results are correct after one Wait", func(t *testing.T) {
+		width := 5000
+		numDispatches := 6
+
+		params := make([]RunParameters, numDispatches)
+		inputs := make([][]float32, numDispatches)
+		outputs := make([][]float32, numDispatches)
+		for d := range params {
+			inputId, input, err := NewBuffer[float32](width)
+			require.NoError(t, err)
+			require.True(t, validBufferId(inputId))
+			outputId, output, err := NewBuffer[float32](width)
+			require.NoError(t, err)
+			require.True(t, validBufferId(outputId))
+
+			for i := range input {
+				input[i] = float32(i*(d+2)) - 0.25
+			}
+
+			params[d] = RunParameters{Grid: Grid{X: width}, BufferIds: []BufferId{inputId, outputId}}
+			inputs[d] = input
+			outputs[d] = output
+		}
+
+		handle, err := function.RunBatchAsync(params)
+		require.NoError(t, err)
+		require.NotNil(t, handle)
+
+		require.NoError(t, handle.Wait())
+
+		for d := range params {
+			require.Equal(t, inputs[d], outputs[d], "dispatch %d did not transfer correctly", d)
+		}
+
+		// The batch is one command buffer, so a second Wait must be a safe error.
+		require.EqualError(t, handle.Wait(), "invalid run handle")
+	})
+
+	t.Run("invalid buffer fails before returning a handle", func(t *testing.T) {
+		width := 10
+		inputId, _, err := NewBuffer[float32](width)
+		require.NoError(t, err)
+		require.True(t, validBufferId(inputId))
+		outputId, _, err := NewBuffer[float32](width)
+		require.NoError(t, err)
+		require.True(t, validBufferId(outputId))
+
+		handle, err := function.RunBatchAsync([]RunParameters{
+			{Grid: Grid{X: width}, BufferIds: []BufferId{inputId, outputId}},
+			{Grid: Grid{X: width}, BufferIds: []BufferId{10000, outputId}},
+		})
+		require.ErrorIs(t, err, ErrInvalidBufferId)
+		require.Nil(t, handle)
+	})
+
+	t.Run("invalid grid fails before returning a handle", func(t *testing.T) {
+		handle, err := function.RunBatchAsync([]RunParameters{
+			{Grid: Grid{X: 10}},
+			{Grid: Grid{X: -1}},
+		})
+		require.EqualError(t, err, "invalid grid dimension")
+		require.Nil(t, handle)
+	})
+}
+
 // Benchmark_Run benchmarks running a computational process for a wide range of widths both in the
 // standard, serial method and in the GPU-accelerated parallel method.
 func Benchmark_Run(b *testing.B) {
