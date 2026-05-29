@@ -46,6 +46,8 @@ jobs:
         include:
         - language: go
           build-mode: manual
+        - language: c-cpp
+          build-mode: manual
         # CodeQL supports the following values keywords for 'language': 'c-cpp', 'csharp', 'go', 'java-kotlin', 'javascript-typescript', 'python', 'ruby', 'swift'
         # Use `c-cpp` to analyze code written in C, C++ or both
         # Use 'java-kotlin' to analyze code written in Java, Kotlin or both
@@ -81,6 +83,11 @@ jobs:
       name: Build go code
       run: |
         GOOS=darwin GOARCH=arm64 go build
+
+    - if: matrix.build-mode == 'manual' && matrix.language == 'c-cpp'
+      name: Build c-cpp code
+      run: |
+        clang -fobjc-arc -fmodules -x objective-c -c *.m -I.
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v3
