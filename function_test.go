@@ -331,12 +331,14 @@ func Test_Function_Run_invalid(t *testing.T) {
 	t.Run("invalid (uninitialized) function", func(t *testing.T) {
 		var emptyFunction Function
 		err := emptyFunction.Run(RunParameters{})
-		require.EqualError(t, err, "unable to run metal function: failed to retrieve function: invalid cache id: 0")
+		require.EqualError(t, err, "unable to run metal function: failed to retrieve function: invalid function id: 0")
+		require.ErrorIs(t, err, ErrInvalidFunctionId)
 	})
 
 	t.Run("non-existent buffer", func(t *testing.T) {
 		err := function.Run(RunParameters{BufferIds: []BufferId{10000}})
-		require.EqualError(t, err, "unable to run metal function: failed to retrieve buffer 1/1: invalid cache id: 10000")
+		require.EqualError(t, err, "unable to run metal function: failed to retrieve buffer 1/1: invalid buffer id: 10000")
+		require.ErrorIs(t, err, ErrInvalidBufferId)
 	})
 
 	t.Run("negative grid X", func(t *testing.T) {
@@ -352,6 +354,19 @@ func Test_Function_Run_invalid(t *testing.T) {
 	t.Run("negative grid Z", func(t *testing.T) {
 		err := function.Run(RunParameters{Grid: Grid{Z: -1}})
 		require.EqualError(t, err, "invalid grid dimension")
+	})
+
+	t.Run("oversized grid dimension", func(t *testing.T) {
+		// A dimension above MaxInt32 would truncate when narrowed to the C layer's 32-bit unsigned
+		// int, so each axis must reject it rather than silently dispatch a wrong-sized grid.
+		for _, g := range []Grid{
+			{X: math.MaxInt32 + 1},
+			{Y: math.MaxInt32 + 1},
+			{Z: math.MaxInt32 + 1},
+		} {
+			err := function.Run(RunParameters{Grid: g})
+			require.EqualError(t, err, "grid dimension exceeds maximum")
+		}
 	})
 
 	t.Run("zero grid clamps to one", func(t *testing.T) {
