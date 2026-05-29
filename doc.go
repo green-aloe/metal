@@ -68,14 +68,17 @@ This is the mapping of Go types to Metal types:
 
 # Limitations
 
-  - macOS on Apple silicon only. The package does not compile on other platforms.
+  - macOS only. The package does not compile on other platforms (all files are
+    constrained to //go:build darwin).
+  - Requires a Metal-capable GPU. On hardware with non-uniform threadgroup support
+    (Apple4 and later, or the Mac2 family) the grid is dispatched exactly; on other
+    Metal GPUs it falls back to rounded-up threadgroup dispatch, and kernels must
+    bounds-check their thread position. See [page 4 here] for a compatibility table.
   - All buffers use shared CPU/GPU memory (MTLResourceStorageModeShared). GPU-private
     buffers are not supported.
   - Only compute kernels are supported (kernel void functions). Vertex and fragment
     shaders are not.
   - MSL source is compiled at runtime. Pre-compiled .metallib files are not supported.
-  - Requires Apple GPUs that support non-uniform threadgroup sizes (all M-series chips do).
-    See [page 4 here] for a full compatibility table.
 
 # Resources
 
@@ -87,7 +90,5 @@ The Metal Shading Language specification is at [MSL Specification].
 [Metal API]: https://developer.apple.com/metal/
 [page 4 here]: https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf
 [MSL Specification]: https://developer.apple.com/metal/Metal-Shading-Language-Specification.pdf
-
-[Apple silicon]: https://en.wikipedia.org/wiki/Apple_silicon
 */
 package metal
