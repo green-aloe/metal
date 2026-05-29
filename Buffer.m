@@ -94,13 +94,15 @@ int buffer_new(size_t size, void **contents, const char **error) {
 // The actual deallocation happens via ARC once the last strong reference
 // (the cache entry, just removed) is gone. Any GPU work already in flight
 // retains its own reference and finishes safely.
-_Bool buffer_close(int bufferId, const char **error) {
+_Bool buffer_close(int bufferId, const char **error, int *errorCode) {
   // Wrap the body so the boxed NSNumber keys and any error NSString created in
   // buffer_cache_remove are released when this returns; the cgo caller has no
   // ambient pool to drain them.
   @autoreleasepool {
     id<MTLBuffer> buffer = buffer_cache_remove(bufferId, error);
     if (buffer == nil) {
+      // buffer_cache_remove fails only when the id is not in the cache.
+      setErrorCode(errorCode, MetalErrorInvalidBufferId);
       return false;
     }
 

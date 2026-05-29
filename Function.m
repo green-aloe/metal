@@ -148,7 +148,8 @@ int function_new(const char *metalCode, const char *funcName,
 // message in error.
 _Bool function_run(int functionId, unsigned int width, unsigned int height,
                    unsigned int depth, float *inputs, int numInputs,
-                   int *bufferIds, int numBufferIds, const char **error) {
+                   int *bufferIds, int numBufferIds, const char **error,
+                   int *errorCode) {
   // Wrap the body so the autoreleased ObjC temporaries created here (the command
   // buffer, encoder, boxed NSNumber keys, any error NSStrings) are released when
   // this returns. A Go goroutine calling in through cgo has no ambient
@@ -162,6 +163,7 @@ _Bool function_run(int functionId, unsigned int width, unsigned int height,
 
     if (function == nil) {
       logError(error, [NSString stringWithFormat:@"failed to retrieve function: invalid function id: %d", functionId]);
+      setErrorCode(errorCode, MetalErrorInvalidFunctionId);
       return false;
     }
 
@@ -207,6 +209,7 @@ _Bool function_run(int functionId, unsigned int width, unsigned int height,
         logError(error,
                  [NSString stringWithFormat:@"failed to retrieve buffer %d/%d: invalid buffer id: %d",
                                             i + 1, numBufferIds, bufferIds[i]]);
+        setErrorCode(errorCode, MetalErrorInvalidBufferId);
         return false;
       }
 
@@ -306,7 +309,7 @@ const char *function_name(int functionId) {
 
 // Release the compiled pipeline for the given function Id. After this call the
 // Id is invalid. Returns false and sets an error if the Id is not found.
-_Bool function_close(int functionId, const char **error) {
+_Bool function_close(int functionId, const char **error, int *errorCode) {
   // Wrap the body so the boxed NSNumber keys and any error NSString are released
   // when this returns; the cgo caller has no ambient pool to drain them.
   @autoreleasepool {
@@ -315,6 +318,7 @@ _Bool function_close(int functionId, const char **error) {
     if (function == nil) {
       [functionLock unlock];
       logError(error, [NSString stringWithFormat:@"invalid function id: %d", functionId]);
+      setErrorCode(errorCode, MetalErrorInvalidFunctionId);
       return false;
     }
     [functionCache removeObjectForKey:@(functionId)];

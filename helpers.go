@@ -10,7 +10,6 @@ import "C"
 import (
 	"errors"
 	"fmt"
-	"strings"
 	"unsafe"
 )
 
@@ -40,38 +39,54 @@ func sizeof[T any]() int {
 	return int(unsafe.Sizeof(t))
 }
 
-// metalErrToError wraps the metal error metalErr inside wrap. C.GoString returns "" for a nil
-// pointer, so a nil or empty metalErr is treated the same as "no metal error".
+// The error categories the C layer reports through its errorCode out-param. These must stay in
+// sync with enum MetalErrorCode in Error.h. errCodeNone (the zero value) means the failure has no
+// associated sentinel; it is what every out-param starts at and what plain errors leave behind.
+const (
+	errCodeNone              = 0
+	errCodeInvalidFunctionId = 1
+	errCodeInvalidBufferId   = 2
+)
+
+// sentinelForCode maps a C error code to the Go sentinel callers test for with errors.Is. An
+// unrecognized or none code maps to nil (no sentinel).
+func sentinelForCode(code C.int) error {
+	switch int(code) {
+	case errCodeInvalidFunctionId:
+		return ErrInvalidFunctionId
+	case errCodeInvalidBufferId:
+		return ErrInvalidBufferId
+	default:
+		return nil
+	}
+}
+
+// metalErrToError builds a Go error from a C error message and category code. metalErr is the
+// human-readable message (C.GoString returns "" for a nil pointer); wrap is an optional Go-side
+// prefix; code is the category the C layer set, used to attach a sentinel so callers can match
+// with errors.Is. The message and the sentinel are independent: the sentinel is decided by the
+// code alone, never by parsing the message text.
 //
-// Any of the given sentinels whose message text appears in the metal error is joined onto the
-// returned error, so callers can test for ErrInvalidBufferId / ErrInvalidFunctionId with errors.Is
-// while still seeing the full descriptive message. (The C layer reports a bad buffer as "invalid
-// buffer id: N" and a bad function as "invalid function id: N", which contain the sentinel text.)
-func metalErrToError(metalErr *C.char, wrap string, sentinels ...error) error {
+// It returns nil only when there is no message and no wrap.
+func metalErrToError(metalErr *C.char, wrap string, code C.int) error {
 	msg := C.GoString(metalErr)
 
 	var err error
 	switch {
 	case msg == "" && wrap == "":
-		// We have neither a metal error nor any wrapping. Return nil.
 		return nil
 	case msg == "":
-		// We have wrapping but we don't have a metal error. Return just the wrapping.
 		err = errors.New(wrap)
 	case wrap == "":
-		// We have a metal error but we don't have any wrapping. Return just the metal error.
 		err = errors.New(msg)
 	default:
-		// We have both a metal error and wrapping. Return both of them formatted together.
 		err = fmt.Errorf("%s: %w", wrap, errors.New(msg))
 	}
 
-	for _, sentinel := range sentinels {
-		if sentinel != nil && strings.Contains(msg, sentinel.Error()) {
-			// Attach the sentinel for errors.Is without altering the message text that Error() reports.
-			err = sentinelError{err: err, sentinel: sentinel}
-			break
-		}
+	if sentinel := sentinelForCode(code); sentinel != nil {
+		// Attach the sentinel for errors.Is without changing the message Error() reports (the
+		// sentinel's own text is usually already a substring of msg, so joining it would duplicate).
+		err = sentinelError{err: err, sentinel: sentinel}
 	}
 
 	return err

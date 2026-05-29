@@ -398,8 +398,9 @@ func Test_metalErrToError(t *testing.T) {
 			metalErr := cgoString(subtest.metalErr)
 			defer cgoFree(metalErr)
 
-			// Run any errors we have for this subtest through the helper.
-			err := metalErrToError(metalErr, subtest.goErr)
+			// Run any errors we have for this subtest through the helper. errCodeNone means no
+			// sentinel is attached, which is what these message-formatting cases exercise.
+			err := metalErrToError(metalErr, subtest.goErr, errCodeNone)
 
 			// If we don't have any error messages, then the error should be nil. Otherwise, we should
 			// have received the expected formatted error.
@@ -421,48 +422,63 @@ func Test_metalErrToError(t *testing.T) {
 	}
 }
 
-// Test_metalErrToError_sentinel tests that metalErrToError attaches a sentinel for errors.Is when
-// (and only when) the metal error message contains the sentinel's text, without changing the
-// message that Error() reports.
+// Test_metalErrToError_sentinel tests that metalErrToError attaches the sentinel selected by the
+// error code (not by parsing the message text), without changing the message Error() reports.
 func Test_metalErrToError_sentinel(t *testing.T) {
-	t.Run("matching sentinel is attached", func(t *testing.T) {
+	t.Run("buffer code attaches buffer sentinel", func(t *testing.T) {
 		metalErr := cgoString("invalid buffer id: 42")
 		defer cgoFree(metalErr)
 
-		err := metalErrToError(metalErr, "unable to free buffer", ErrInvalidBufferId)
+		err := metalErrToError(metalErr, "unable to free buffer", errCodeInvalidBufferId)
 
 		require.ErrorIs(t, err, ErrInvalidBufferId)
+		require.NotErrorIs(t, err, ErrInvalidFunctionId)
 		// The descriptive message must be preserved exactly, not joined with the sentinel text.
 		require.EqualError(t, err, "unable to free buffer: invalid buffer id: 42")
 	})
 
-	t.Run("non-matching sentinel is not attached", func(t *testing.T) {
-		metalErr := cgoString("invalid buffer id: 42")
-		defer cgoFree(metalErr)
-
-		// The message names a buffer, so the function sentinel must not match.
-		err := metalErrToError(metalErr, "unable to free buffer", ErrInvalidFunctionId)
-
-		require.NotErrorIs(t, err, ErrInvalidFunctionId)
-	})
-
-	t.Run("first matching sentinel wins among several", func(t *testing.T) {
+	t.Run("function code attaches function sentinel", func(t *testing.T) {
 		metalErr := cgoString("invalid function id: 7")
 		defer cgoFree(metalErr)
 
-		err := metalErrToError(metalErr, "unable to run metal function", ErrInvalidFunctionId, ErrInvalidBufferId)
+		err := metalErrToError(metalErr, "unable to run metal function", errCodeInvalidFunctionId)
 
 		require.ErrorIs(t, err, ErrInvalidFunctionId)
 		require.NotErrorIs(t, err, ErrInvalidBufferId)
+		require.EqualError(t, err, "unable to run metal function: invalid function id: 7")
 	})
 
-	t.Run("no sentinel attached when message does not match", func(t *testing.T) {
+	t.Run("sentinel follows the code, not the message text", func(t *testing.T) {
+		// The message names a function, but the code says buffer: the code wins. This is the whole
+		// point of code-based matching — the human-readable message carries no semantic weight.
+		metalErr := cgoString("invalid function id: 7")
+		defer cgoFree(metalErr)
+
+		err := metalErrToError(metalErr, "unable to run metal function", errCodeInvalidBufferId)
+
+		require.ErrorIs(t, err, ErrInvalidBufferId)
+		require.NotErrorIs(t, err, ErrInvalidFunctionId)
+	})
+
+	t.Run("errCodeNone attaches no sentinel", func(t *testing.T) {
 		metalErr := cgoString("failed to create pipeline")
 		defer cgoFree(metalErr)
 
-		err := metalErrToError(metalErr, "unable to set up metal function", ErrInvalidFunctionId)
+		err := metalErrToError(metalErr, "unable to set up metal function", errCodeNone)
 
 		require.Error(t, err)
 		require.NotErrorIs(t, err, ErrInvalidFunctionId)
+		require.NotErrorIs(t, err, ErrInvalidBufferId)
+	})
+
+	t.Run("unrecognized code attaches no sentinel", func(t *testing.T) {
+		metalErr := cgoString("some failure")
+		defer cgoFree(metalErr)
+
+		err := metalErrToError(metalErr, "wrap", 99)
+
+		require.Error(t, err)
+		require.NotErrorIs(t, err, ErrInvalidFunctionId)
+		require.NotErrorIs(t, err, ErrInvalidBufferId)
 	})
 }

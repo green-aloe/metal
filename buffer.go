@@ -77,7 +77,9 @@ func NewBuffer[T BufferType](width int) (BufferId, []T, error) {
 	var contents unsafe.Pointer
 	bufferId := C.buffer_new(C.size_t(numBytes), &contents, &err)
 	if int(bufferId) == 0 {
-		return 0, nil, metalErrToError(err, "unable to create buffer", ErrInvalidBufferId)
+		// buffer_new fails only on allocation failure or id exhaustion, neither of which is an
+		// invalid-handle condition, so the code is errCodeNone and no sentinel is attached.
+		return 0, nil, metalErrToError(err, "unable to create buffer", errCodeNone)
 	}
 
 	// Wrap the buffer in a go slice.
@@ -111,12 +113,14 @@ func (id *BufferId) Close() error {
 		return ErrInvalidBufferId
 	}
 
-	// The C side may strdup an error message into err on failure; we must free it.
+	// The C side may strdup an error message into err on failure; we must free it. It also
+	// categorizes the failure in code so metalErrToError can attach the matching sentinel.
 	var err *C.char
 	defer func() { freeCString(err) }()
+	var code C.int
 
-	if !C.buffer_close(C.int(*id), &err) {
-		return metalErrToError(err, "unable to free buffer", ErrInvalidBufferId)
+	if !C.buffer_close(C.int(*id), &err, &code) {
+		return metalErrToError(err, "unable to free buffer", code)
 	}
 
 	// Clear the buffer Id to mark that it's no longer valid.

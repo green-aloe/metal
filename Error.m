@@ -20,3 +20,13 @@ void logError(const char **target, NSString *message) {
 
   *target = strdup(bytes);
 }
+
+// Set *target to code if target is not NULL. Callers that report a plain
+// (uncategorized) error leave the code at its zero value, MetalErrorNone.
+void setErrorCode(int *target, enum MetalErrorCode code) {
+  if (target == NULL) {
+    return;
+  }
+
+  *target = (int)code;
+}

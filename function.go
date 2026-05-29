@@ -74,8 +74,9 @@ func NewFunction(metalSource, funcName string) (*Function, error) {
 	id := int32(C.function_new(src, name, &err))
 	if id == 0 {
 		// NewFunction failures (missing source, MSL compile error, function not found) are not
-		// invalid-handle conditions, so no sentinel is attached: the handle does not exist yet.
-		return nil, metalErrToError(err, "unable to set up metal function")
+		// invalid-handle conditions, so the code is errCodeNone and no sentinel is attached: the
+		// handle does not exist yet.
+		return nil, metalErrToError(err, "unable to set up metal function", errCodeNone)
 	}
 
 	return &Function{
@@ -161,12 +162,14 @@ func (f *Function) Close() error {
 		return ErrInvalidFunctionId
 	}
 
-	// The C side may strdup an error message into err on failure; we must free it.
+	// The C side may strdup an error message into err on failure; we must free it. It also
+	// categorizes the failure in code so metalErrToError can attach the matching sentinel.
 	var err *C.char
 	defer func() { freeCString(err) }()
+	var code C.int
 
-	if !C.function_close(C.int(f.id), &err) {
-		return metalErrToError(err, "unable to close metal function", ErrInvalidFunctionId)
+	if !C.function_close(C.int(f.id), &err, &code) {
+		return metalErrToError(err, "unable to close metal function", code)
 	}
 
 	f.id = 0
@@ -217,12 +220,15 @@ func (f *Function) Run(params RunParameters) error {
 		bufferIdsPtr = (*C.int)(unsafe.Pointer(&params.BufferIds[0]))
 	}
 
-	// The C side may strdup an error message into cErr on failure; we must free it.
+	// The C side may strdup an error message into cErr on failure; we must free it. It also
+	// categorizes the failure in code (invalid function id vs. invalid buffer id) so
+	// metalErrToError can attach the matching sentinel.
 	var cErr *C.char
 	defer func() { freeCString(cErr) }()
+	var code C.int
 
 	// Run the computation on the GPU.
-	ok := C.function_run(C.int(f.id), width, height, depth, inputsPtr, C.int(len(params.Inputs)), bufferIdsPtr, C.int(len(params.BufferIds)), &cErr)
+	ok := C.function_run(C.int(f.id), width, height, depth, inputsPtr, C.int(len(params.Inputs)), bufferIdsPtr, C.int(len(params.BufferIds)), &cErr, &code)
 
 	// Keep the input and buffer-id slices alive until function_run returns. The C call reads through
 	// inputsPtr/bufferIdsPtr (raw pointers into the slice backing arrays), which the Go garbage
@@ -232,7 +238,7 @@ func (f *Function) Run(params RunParameters) error {
 	runtime.KeepAlive(params.BufferIds)
 
 	if !ok {
-		return metalErrToError(cErr, "unable to run metal function", ErrInvalidFunctionId, ErrInvalidBufferId)
+		return metalErrToError(cErr, "unable to run metal function", code)
 	}
 
 	return nil

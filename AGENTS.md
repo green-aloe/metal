@@ -66,9 +66,10 @@ staticcheck ./...
 
 ### Error handling
 
-- ObjC functions report errors via `const char **error` out-params, filled by `logError()` in `Error.m`.
-- Go side converts via `metalErrToError(err, wrap)` in `helpers.go` — wraps the ObjC message in a Go error.
-- Sentinel errors: `ErrInvalidBufferId` and `ErrInvalidFunctionId` — callers can use `errors.Is`.
+- ObjC functions report a failure as two independent out-params: a human-readable message via `const char **error` (filled by `logError()` in `Error.m`) and a category via `int *errorCode` (set by `setErrorCode()`, values from `enum MetalErrorCode` in `Error.h`). Only the functions whose failures map to a sentinel take the `errorCode` param: `function_run`, `function_close`, `buffer_close`.
+- Go side converts via `metalErrToError(err, wrap, code)` in `helpers.go`. It formats the message and, via `sentinelForCode(code)`, attaches the matching sentinel so `errors.Is` works. The Go `errCode*` constants mirror `enum MetalErrorCode` and must stay in sync.
+- The sentinel is chosen by the **code alone, never by parsing the message text**. This is deliberate: an earlier design matched `strings.Contains(msg, sentinel.Error())`, which silently broke when a C message used different wording. Display text and matching are now decoupled.
+- Sentinel errors: `ErrInvalidBufferId` and `ErrInvalidFunctionId` — callers can use `errors.Is`. Creation failures (`NewFunction`, `NewBuffer`) carry no sentinel: the handle does not exist yet, so the error is not an invalid-handle condition.
 
 ### Testing
 
