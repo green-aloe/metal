@@ -3,6 +3,7 @@
 package metal
 
 /*
+#cgo CFLAGS: -fobjc-arc
 #cgo LDFLAGS: -framework Metal -framework Foundation
 #include "Metal.h"
 */
@@ -32,8 +33,8 @@ func (id BufferId) Valid() bool {
 // Only types up to 32 bits wide are allowed. 64-bit types (int64, uint64, float64) are deliberately
 // excluded: the Metal Shading Language has no portable 64-bit scalar that a kernel could declare to
 // read such a buffer back as a typed array, so allowing them would only let callers allocate memory
-// no shader could meaningfully consume. Use float32/int32/uint32 (or narrower) and, if you need more
-// range, split the value across multiple elements in the shader.
+// no shader could meaningfully consume. Use float32/int32/uint32 (or narrower) and, if you need
+// more range, split the value across multiple elements in the shader.
 type BufferType interface {
 	~int8 | ~int16 | ~int32 | ~uint8 | ~uint16 | ~uint32 | ~float32
 }
@@ -59,8 +60,10 @@ func NewBuffer[T BufferType](width int) (BufferId, []T, error) {
 		return 0, nil, errors.New("invalid width")
 	}
 
-	// Check the byte count against the C-side limit (a signed 32-bit int) before multiplying, so the
-	// width*size product can never silently overflow Go's int on the way to the bounds check.
+	// Cap the byte count at MaxInt32 (~2 GB). buffer_new takes a size_t, so this is not a type
+	// limit of the C boundary; it is a deliberate ceiling on a single buffer. Checking width
+	// against the limit before multiplying also guarantees the width*size product cannot silently
+	// overflow Go's int on the way to the bounds check.
 	if width > math.MaxInt32/sizeof[T]() {
 		return 0, nil, errors.New("exceeded maximum number of bytes")
 	}
@@ -72,7 +75,7 @@ func NewBuffer[T BufferType](width int) (BufferId, []T, error) {
 
 	// Allocate memory for the new buffer and get its contents pointer in one call.
 	var contents unsafe.Pointer
-	bufferId := C.buffer_new(C.int(numBytes), &contents, &err)
+	bufferId := C.buffer_new(C.size_t(numBytes), &contents, &err)
 	if int(bufferId) == 0 {
 		return 0, nil, metalErrToError(err, "unable to create buffer", ErrInvalidBufferId)
 	}
@@ -84,6 +87,7 @@ func NewBuffer[T BufferType](width int) (BufferId, []T, error) {
 }
 
 // NewBufferWith is the same as NewBuffer, but it also initializes the buffer with the provided data.
+// Like NewBuffer, it requires a width of at least one, so empty data returns an "invalid width" error.
 func NewBufferWith[T BufferType](data []T) (BufferId, []T, error) {
 	bufferId, buffer, err := NewBuffer[T](len(data))
 	if err != nil {

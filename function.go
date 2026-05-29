@@ -3,6 +3,7 @@
 package metal
 
 /*
+#cgo CFLAGS: -fobjc-arc
 #cgo LDFLAGS: -framework Metal -framework Foundation
 #include "Metal.h"
 */
@@ -10,6 +11,7 @@ import "C"
 
 import (
 	"errors"
+	"math"
 	"runtime"
 	"unsafe"
 )
@@ -71,7 +73,9 @@ func NewFunction(metalSource, funcName string) (*Function, error) {
 
 	id := int32(C.function_new(src, name, &err))
 	if id == 0 {
-		return nil, metalErrToError(err, "unable to set up metal function", ErrInvalidFunctionId)
+		// NewFunction failures (missing source, MSL compile error, function not found) are not
+		// invalid-handle conditions, so no sentinel is attached: the handle does not exist yet.
+		return nil, metalErrToError(err, "unable to set up metal function")
 	}
 
 	return &Function{
@@ -175,7 +179,17 @@ func (f *Function) Close() error {
 //
 // A grid dimension of 0 is treated as 1 (so an unset dimension behaves as a single unit). A
 // negative grid dimension is invalid and returns an error.
+//
+// On GPUs that support non-uniform threadgroup sizes (Apple4 and later, or the Mac2 family) the
+// grid is dispatched exactly, so a kernel can assume its thread position is always within bounds.
+// On older hardware the grid is rounded up to whole threadgroups, which over-dispatches: such a
+// kernel must bounds-check its thread position against the real problem size before indexing a
+// buffer.
 func (f *Function) Run(params RunParameters) error {
+	if err := Available(); err != nil {
+		return err
+	}
+
 	// Set up the dimensions of the grid. Every dimension must be at least one unit long. A zero
 	// dimension is a convenience for "unused" and clamps to 1; a negative dimension is a caller bug.
 	width, err := gridDimension(params.Grid.X)
@@ -226,11 +240,14 @@ func (f *Function) Run(params RunParameters) error {
 
 // gridDimension validates and normalizes a single grid dimension for the C layer. A size of 0 (an
 // unused dimension) clamps to 1; a negative size is a caller error. The C side takes the dimensions
-// as unsigned, so all values handed across must be positive.
+// as a 32-bit unsigned int, so a value above MaxInt32 is rejected rather than silently truncated
+// when the Go int (up to 64-bit) is narrowed to C.uint.
 func gridDimension(size int) (C.uint, error) {
 	switch {
 	case size < 0:
 		return 0, errors.New("invalid grid dimension")
+	case size > math.MaxInt32:
+		return 0, errors.New("grid dimension exceeds maximum")
 	case size == 0:
 		return 1, nil
 	default:
