@@ -3,10 +3,15 @@ name: Staticcheck
 on: ["push", "pull_request"]
 
 jobs:
-  build:
+  ci:
+    name: "Run CI"
     runs-on: macos-latest
     steps:
     - uses: actions/checkout@v3
-
+    - uses: actions/setup-go@v6
+      with:
+        go-version: 1.26.x
     - name: Run staticcheck
       uses: dominikh/staticcheck-action@v1.3.1
+      with:
+        version: "latest"
