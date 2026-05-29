@@ -1,7 +1,7 @@
-#include "BufferCache.h"
-#include "Error.h"
-#include "Metal.h"
-#include "MetalInternal.h"
+#import "BufferCache.h"
+#import "Error.h"
+#import "Metal.h"
+#import "MetalInternal.h"
 #include <limits.h>
 #import <Metal/Metal.h>
 
@@ -63,22 +63,29 @@ id<MTLBuffer> buffer_cache_remove(int bufferId, const char **error) {
 // Allocate a block of shared CPU/GPU memory large enough to hold the specified
 // number of bytes. Writes the buffer's ID to the return value and its contents
 // pointer to *contents. Returns 0 and sets an error on failure.
-int buffer_new(int size, void **contents, const char **error) {
-  id<MTLBuffer> buffer =
-      [metal_device() newBufferWithLength:size options:MTLResourceStorageModeShared];
-  if (buffer == nil) {
-    logError(error, [NSString stringWithFormat:@"failed to create buffer with %d bytes", size]);
-    return 0;
-  }
+int buffer_new(size_t size, void **contents, const char **error) {
+  // Wrap the body so autoreleased temporaries (boxed NSNumber keys via
+  // buffer_cache_store, any error NSString) are released when this returns; the
+  // cgo caller has no ambient pool to drain them. The MTLBuffer itself is kept
+  // alive by the strong reference held in bufferCache, and *contents is a raw
+  // pointer into its shared memory that the buffer's lifetime backs.
+  @autoreleasepool {
+    id<MTLBuffer> buffer =
+        [metal_device() newBufferWithLength:size options:MTLResourceStorageModeShared];
+    if (buffer == nil) {
+      logError(error, [NSString stringWithFormat:@"failed to create buffer with %zu bytes", size]);
+      return 0;
+    }
 
-  int bufferId = buffer_cache_store(buffer, error);
-  if (bufferId == 0) {
-    // buffer_cache_store has already populated *error with a specific message.
-    return 0;
-  }
+    int bufferId = buffer_cache_store(buffer, error);
+    if (bufferId == 0) {
+      // buffer_cache_store has already populated *error with a specific message.
+      return 0;
+    }
 
-  *contents = [buffer contents];
-  return bufferId;
+    *contents = [buffer contents];
+    return bufferId;
+  }
 }
 
 // Free a cached buffer. If any error is encountered relinquishing the memory,
@@ -88,10 +95,15 @@ int buffer_new(int size, void **contents, const char **error) {
 // (the cache entry, just removed) is gone. Any GPU work already in flight
 // retains its own reference and finishes safely.
 _Bool buffer_close(int bufferId, const char **error) {
-  id<MTLBuffer> buffer = buffer_cache_remove(bufferId, error);
-  if (buffer == nil) {
-    return false;
-  }
+  // Wrap the body so the boxed NSNumber keys and any error NSString created in
+  // buffer_cache_remove are released when this returns; the cgo caller has no
+  // ambient pool to drain them.
+  @autoreleasepool {
+    id<MTLBuffer> buffer = buffer_cache_remove(bufferId, error);
+    if (buffer == nil) {
+      return false;
+    }
 
-  return true;
+    return true;
+  }
 }

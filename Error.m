@@ -1,4 +1,4 @@
-#include "Error.h"
+#import "Error.h"
 #include <string.h>
 
 // Set *target to a heap-allocated copy of message's UTF-8 bytes if target is
@@ -8,7 +8,7 @@
 // receiver's autorelease pool; that pool can drain at any cgo call boundary,
 // so we strdup the bytes before handing them back across the language barrier.
 void logError(const char **target, NSString *message) {
-  if (target == nil) {
+  if (target == NULL) {
     return;
   }
 

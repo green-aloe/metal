@@ -18,7 +18,7 @@ const char *function_name(int functionId);
 
 // Functions that must be called once for every buffer used as an argument to
 // a metal function
-int buffer_new(int size, void **contents, const char **error);
+int buffer_new(size_t size, void **contents, const char **error);
 _Bool buffer_close(int bufferId, const char **error);
 
 // Functions for closing metal resources
