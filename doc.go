@@ -24,12 +24,40 @@ The typical pattern is:
 
  4. Call [BufferId.Close] and [Function.Close] when resources are no longer needed.
 
+# Running: synchronous, batched, and asynchronous
+
+There are four ways to dispatch work, trading simplicity for throughput:
+
+  - [Function.Run] encodes one dispatch, commits it, and blocks until the GPU finishes.
+    Simplest; results are ready when it returns.
+
+  - [Function.RunBatch] encodes many dispatches into a single GPU command buffer and waits
+    once for the whole batch. This amortizes the per-command-buffer setup and the single
+    CPU/GPU synchronization across all dispatches, so it is much faster than calling Run in a
+    loop when you have many independent dispatches to run back to back.
+
+  - [Function.RunAsync] encodes and commits one dispatch but returns a [*RunHandle]
+    immediately without waiting, so the CPU is free to encode more work or do other
+    computation while the GPU runs. Call [RunHandle.Wait] exactly once to block for
+    completion; the output buffers are only valid after Wait returns, and the dispatch's
+    buffers must not be closed before then.
+
+  - [Function.RunBatchAsync] combines the two: it commits a whole batch as one command
+    buffer and returns a [*RunHandle] without waiting. A single [RunHandle.Wait] completes
+    the entire batch.
+
+Apple recommends minimizing the number of command buffers and avoiding unnecessary CPU/GPU
+synchronization; the batched and async variants exist for workloads where the per-Run round
+trip dominates.
+
 # Concurrency
 
-[Function.Run] is safe for concurrent use — multiple goroutines may call Run on the same
-[*Function] simultaneously. [NewFunction] and [NewBuffer] are also safe for concurrent use.
-[BufferId.Close] and [Function.Close] are NOT safe to call concurrently with Run on the
-same resource.
+[Function.Run], [Function.RunBatch], [Function.RunAsync], and [Function.RunBatchAsync] are
+all safe for concurrent use — multiple goroutines may dispatch on the same [*Function]
+simultaneously. [NewFunction] and [NewBuffer] are also safe for concurrent use.
+[BufferId.Close] and [Function.Close] are NOT safe to call concurrently with a dispatch on
+the same resource; for the async variants this means the buffers must stay open until
+[RunHandle.Wait] returns.
 
 # Buffers and dimensions
 

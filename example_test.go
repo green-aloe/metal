@@ -254,6 +254,184 @@ func ExampleFunction_Run_threeDimensions() {
 	// [[[1 2 3] [4 5 6] [7 8 9]] [[10 11 12] [13 14 15] [16 17 18]] [[19 20 21] [22 23 24] [25 26 27]]]
 }
 
+func ExampleFunction_RunBatch() {
+	const (
+		source = `
+		#include <metal_stdlib>
+
+		using namespace metal;
+
+		kernel void scale(constant float *factor, constant float *input, device float *output, uint pos [[thread_position_in_grid]]) {
+			output[pos] = input[pos] * *factor;
+		}
+	`
+		width = 3
+	)
+
+	function, err := metal.NewFunction(source, "scale")
+	if err != nil {
+		log.Fatalf("Unable to create metal function: %v", err)
+	}
+
+	// Build three independent dispatches, each with its own input/output buffers and its own scale
+	// factor. RunBatch encodes all three into a single command buffer and runs them in one trip to
+	// the GPU, which is faster than calling Run three times.
+	const numDispatches = 3
+	params := make([]metal.RunParameters, numDispatches)
+	outputs := make([][]float32, numDispatches)
+	for d := range params {
+		inputId, input, err := metal.NewBuffer[float32](width)
+		if err != nil {
+			log.Fatalf("Unable to create metal buffer: %v", err)
+		}
+		outputId, output, err := metal.NewBuffer[float32](width)
+		if err != nil {
+			log.Fatalf("Unable to create metal buffer: %v", err)
+		}
+
+		for i := range input {
+			input[i] = float32(i + 1)
+		}
+
+		params[d] = metal.RunParameters{
+			Grid:      metal.Grid{X: width},
+			Inputs:    []float32{float32(d + 1)}, // scale by 1, then 2, then 3
+			BufferIds: []metal.BufferId{inputId, outputId},
+		}
+		outputs[d] = output
+	}
+
+	if err := function.RunBatch(params); err != nil {
+		log.Fatalf("Unable to run metal function batch: %v", err)
+	}
+
+	for _, output := range outputs {
+		fmt.Println(output)
+	}
+	// Output:
+	// [1 2 3]
+	// [2 4 6]
+	// [3 6 9]
+}
+
+func ExampleFunction_RunAsync() {
+	const (
+		source = `
+		#include <metal_stdlib>
+
+		using namespace metal;
+
+		kernel void transfer1D(constant float *input, device float *output, uint pos [[thread_position_in_grid]]) {
+			output[pos] = input[pos];
+		}
+	`
+		width = 3
+	)
+
+	function, err := metal.NewFunction(source, "transfer1D")
+	if err != nil {
+		log.Fatalf("Unable to create metal function: %v", err)
+	}
+
+	inputId, input, err := metal.NewBuffer[float32](width)
+	if err != nil {
+		log.Fatalf("Unable to create metal buffer: %v", err)
+	}
+	outputId, output, err := metal.NewBuffer[float32](width)
+	if err != nil {
+		log.Fatalf("Unable to create metal buffer: %v", err)
+	}
+
+	for i := range input {
+		input[i] = float32(i + 1)
+	}
+
+	// RunAsync returns immediately, before the GPU has finished, leaving the CPU free to do other
+	// work in the meantime.
+	handle, err := function.RunAsync(metal.RunParameters{
+		Grid:      metal.Grid{X: width},
+		BufferIds: []metal.BufferId{inputId, outputId},
+	})
+	if err != nil {
+		log.Fatalf("Unable to run metal function asynchronously: %v", err)
+	}
+
+	// ... do other CPU work here while the GPU runs ...
+
+	// Wait blocks until the dispatch finishes. The output buffer is only valid after this returns.
+	if err := handle.Wait(); err != nil {
+		log.Fatalf("Unable to wait for metal function: %v", err)
+	}
+
+	fmt.Println(output)
+	// Output:
+	// [1 2 3]
+}
+
+func ExampleFunction_RunBatchAsync() {
+	const (
+		source = `
+		#include <metal_stdlib>
+
+		using namespace metal;
+
+		kernel void transfer1D(constant float *input, device float *output, uint pos [[thread_position_in_grid]]) {
+			output[pos] = input[pos];
+		}
+	`
+		width = 3
+	)
+
+	function, err := metal.NewFunction(source, "transfer1D")
+	if err != nil {
+		log.Fatalf("Unable to create metal function: %v", err)
+	}
+
+	const numDispatches = 2
+	params := make([]metal.RunParameters, numDispatches)
+	outputs := make([][]float32, numDispatches)
+	for d := range params {
+		inputId, input, err := metal.NewBuffer[float32](width)
+		if err != nil {
+			log.Fatalf("Unable to create metal buffer: %v", err)
+		}
+		outputId, output, err := metal.NewBuffer[float32](width)
+		if err != nil {
+			log.Fatalf("Unable to create metal buffer: %v", err)
+		}
+
+		for i := range input {
+			input[i] = float32(i + 1 + d*10)
+		}
+
+		params[d] = metal.RunParameters{
+			Grid:      metal.Grid{X: width},
+			BufferIds: []metal.BufferId{inputId, outputId},
+		}
+		outputs[d] = output
+	}
+
+	// RunBatchAsync commits the whole batch as one command buffer and returns immediately. Because
+	// the batch is a single command buffer, one Wait completes every dispatch in it.
+	handle, err := function.RunBatchAsync(params)
+	if err != nil {
+		log.Fatalf("Unable to run metal function batch asynchronously: %v", err)
+	}
+
+	// ... do other CPU work here while the GPU runs the whole batch ...
+
+	if err := handle.Wait(); err != nil {
+		log.Fatalf("Unable to wait for metal function: %v", err)
+	}
+
+	for _, output := range outputs {
+		fmt.Println(output)
+	}
+	// Output:
+	// [1 2 3]
+	// [11 12 13]
+}
+
 func Example() {
 	width := 3
 	height := 3
