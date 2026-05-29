@@ -94,7 +94,6 @@ int function_new(const char *metalCode, const char *funcName,
     if (library == nil) {
       logError(error, [NSString stringWithFormat:@"failed to create library: %@",
                                                  libraryError]);
-      function = nil;
       return 0;
     }
 
@@ -106,7 +105,6 @@ int function_new(const char *metalCode, const char *funcName,
     if (function.mtlFunction == nil) {
       logError(error, [NSString stringWithFormat:@"failed to find function '%s'",
                                                  funcName]);
-      function = nil;
       return 0;
     }
 
@@ -120,7 +118,6 @@ int function_new(const char *metalCode, const char *funcName,
     if (function.pipeline == nil) {
       logError(error, [NSString stringWithFormat:@"failed to create pipeline: %@",
                                                  pipelineError]);
-      function = nil;
       return 0;
     }
 
