@@ -969,3 +969,64 @@ func Benchmark_Run(b *testing.B) {
 		})
 	}
 }
+
+// Benchmark_Run_dispatchStrategies compares the three ways to issue many independent dispatches:
+// calling Run in a loop (one command buffer and one CPU/GPU sync per dispatch), RunBatch (one
+// command buffer and one sync for the whole group), and RunAsync (fire all dispatches without
+// waiting, then Wait on each handle so the GPU work overlaps). Each strategy does the same total
+// work — numDispatches transfers of a width-element buffer — so the per-iteration times are directly
+// comparable and expose the cost of the per-Run round trip that RunBatch and RunAsync exist to avoid.
+func Benchmark_Run_dispatchStrategies(b *testing.B) {
+	const width = 100_000
+
+	for _, numDispatches := range []int{1, 16, 128} {
+		function, _ := NewFunction(sourceTransfer1D, "transfer1D")
+		addFunctionId()
+
+		// Give each dispatch its own independent input/output buffer pair so the dispatches do not
+		// contend on the same memory and the batch/async paths are exercised realistically.
+		params := make([]RunParameters, numDispatches)
+		for d := range params {
+			inputId, input, _ := NewBuffer[float32](width)
+			addBufferId()
+			outputId, _, _ := NewBuffer[float32](width)
+			addBufferId()
+
+			for i := range input {
+				input[i] = rand.Float32()
+			}
+
+			params[d] = RunParameters{
+				Grid:      Grid{X: width},
+				BufferIds: []BufferId{inputId, outputId},
+			}
+		}
+
+		b.Run(fmt.Sprintf("RunLoop_%d", numDispatches), func(b *testing.B) {
+			for n := 0; n < b.N; n++ {
+				for d := range params {
+					function.Run(params[d])
+				}
+			}
+		})
+
+		b.Run(fmt.Sprintf("RunBatch_%d", numDispatches), func(b *testing.B) {
+			for n := 0; n < b.N; n++ {
+				function.RunBatch(params)
+			}
+		})
+
+		b.Run(fmt.Sprintf("RunAsync_%d", numDispatches), func(b *testing.B) {
+			handles := make([]*RunHandle, numDispatches)
+			for n := 0; n < b.N; n++ {
+				// Fire every dispatch without waiting, so their GPU work can overlap, then wait on each.
+				for d := range params {
+					handles[d], _ = function.RunAsync(params[d])
+				}
+				for _, h := range handles {
+					h.Wait()
+				}
+			}
+		})
+	}
+}
